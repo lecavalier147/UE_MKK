@@ -2,10 +2,215 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.express as px
+import yaml
+from yaml.loader import SafeLoader
+import streamlit_authenticator as stauth
+from supabase import create_client, Client
+from datetime import datetime
 
+# ------------------ НАСТРОЙКА СТРАНИЦЫ ------------------
 st.set_page_config(page_title="Калькулятор юнит-экономики", layout="wide")
 st.title("📊 Калькулятор юнит-экономики (B2C кредитование)")
 st.markdown("Введите параметры для **нового** и **повторного** займов. LTV/CAC рассчитывается с учётом CAC повторного займа.")
+
+# ------------------ ПОДКЛЮЧЕНИЕ К SUPABASE ------------------
+def init_supabase() -> Client:
+    # В secrets.toml должны лежать SUPABASE_URL и SUPABASE_KEY
+    url = st.secrets["SUPABASE_URL"]
+    key = st.secrets["SUPABASE_KEY"]
+    return create_client(url, key)
+
+supabase = init_supabase()
+
+# ------------------ АВТОРИЗАЦИЯ (streamlit-authenticator) ------------------
+# Загружаем конфиг с пользователями (файл config.yaml лежит в корне проекта)
+with open('config.yaml', 'r', encoding='utf-8') as file:
+    config = yaml.load(file, Loader=SafeLoader)
+
+authenticator = stauth.Authenticate(
+    config['credentials'],
+    config['cookie']['name'],
+    config['cookie']['key'],
+    config['cookie']['expiry_days'],
+    config['pre-authorized']
+)
+
+# Показываем форму входа в основном окне (можно и в sidebar, но для простоты оставим здесь)
+authenticator.login()
+
+# Если пользователь НЕ авторизован – показываем предупреждение и останавливаем выполнение
+if not st.session_state.get("authentication_status"):
+    if st.session_state.get("authentication_status") is False:
+        st.error('Неверное имя пользователя или пароль')
+    else:
+        st.warning('Пожалуйста, авторизуйтесь')
+    st.stop()
+
+# Если авторизован – приветствуем
+user_email = st.session_state['username']  # или можно взять из config.yaml
+st.sidebar.write(f"## Добро пожаловать, *{st.session_state['name']}*")
+authenticator.logout('Выйти', 'sidebar')
+
+# ------------------ ФУНКЦИИ РАБОТЫ СО СЦЕНАРИЯМИ В SUPABASE ------------------
+def get_user_id_by_email(email: str):
+    """Получаем internal user id из Supabase Auth по email (понадобится для RLS)"""
+    # Это простой способ – предполагаем, что в таблице user_products мы храним email,
+    # а не user_id. Для упрощения будем использовать email как идентификатор.
+    # В реальном проекте лучше использовать auth.uid(), но для этого нужен admin ключ.
+    return email
+
+def save_scenario_to_supabase(user_email, scenario_name, params_dict):
+    """Сохраняет текущий набор параметров как сценарий"""
+    data = {
+        "email": user_email,
+        "product_data": {
+            "name": scenario_name,
+            "created_at": datetime.now().isoformat(),
+            "params": params_dict
+        }
+    }
+    try:
+        supabase.table("user_products").insert(data).execute()
+        return True
+    except Exception as e:
+        st.error(f"Ошибка сохранения: {e}")
+        return False
+
+def load_scenarios_list(user_email):
+    """Возвращает список сценариев для данного пользователя: [(id, name), ...]"""
+    try:
+        response = supabase.table("user_products")\
+            .select("id, product_data->>name")\
+            .eq("email", user_email)\
+            .execute()
+        if response.data:
+            return [(row["id"], row["product_data->>name"]) for row in response.data]
+        return []
+    except Exception as e:
+        st.error(f"Ошибка загрузки списка: {e}")
+        return []
+
+def load_scenario_by_id(user_email, scenario_id):
+    """Загружает словарь params для выбранного сценария"""
+    try:
+        response = supabase.table("user_products")\
+            .select("product_data")\
+            .eq("id", scenario_id)\
+            .eq("email", user_email)\
+            .execute()
+        if response.data and "params" in response.data[0]["product_data"]:
+            return response.data[0]["product_data"]["params"]
+        return None
+    except Exception as e:
+        st.error(f"Ошибка загрузки сценария: {e}")
+        return None
+
+def delete_scenario_by_id(user_email, scenario_id):
+    """Удаляет сценарий"""
+    try:
+        supabase.table("user_products")\
+            .delete()\
+            .eq("id", scenario_id)\
+            .eq("email", user_email)\
+            .execute()
+        return True
+    except Exception as e:
+        st.error(f"Ошибка удаления: {e}")
+        return False
+
+# ------------------ БЛОК УПРАВЛЕНИЯ СЦЕНАРИЯМИ (в боковой панели) ------------------
+# Этот блок добавляется в самое начало боковой панели, после приветствия
+with st.sidebar:
+    st.subheader("💾 Сохранённые сценарии")
+    
+    # Загружаем список сценариев пользователя
+    scenarios = load_scenarios_list(user_email)
+    scenario_names = {name: sid for sid, name in scenarios}
+    
+    # Выбор сценария для загрузки
+    selected_name = st.selectbox("Выберите сценарий", [""] + list(scenario_names.keys()), key="scenario_select")
+    if selected_name:
+        scenario_id = scenario_names[selected_name]
+        if st.button("Загрузить выбранный сценарий", key="load_btn"):
+            saved_params = load_scenario_by_id(user_email, scenario_id)
+            if saved_params:
+                # Сохраняем загруженные параметры в session_state, чтобы потом применить к виджетам
+                st.session_state['load_params'] = saved_params
+                st.rerun()
+    
+    # Сохранение нового сценария
+    new_scenario_name = st.text_input("Имя нового сценария", key="new_scenario_name")
+    if st.button("Сохранить текущий сценарий", key="save_btn") and new_scenario_name:
+        # Собираем текущие параметры (все значения из виджетов)
+        current_params = {
+            'L_new': L_new,
+            't_new': t_new,
+            'r_new': r_new,
+            'fee_new': fee_new,
+            'early_rate_new': early_rate_new,
+            'prolong_pen_new': prolong_pen_new,
+            'prolong_term_new': prolong_term_new,
+            'default_rate_new': default_rate_new,
+            'lgd_new': lgd_new,
+            'ins_pen_new': ins_pen_new,
+            'ins_sum_new': ins_sum_new,
+            'cross_pen_new': cross_pen_new,
+            'cross_sum_new': cross_sum_new,
+            'cac_direct_new': cac_direct_new,
+            'sms_count_new': sms_count_new,
+            'sms_price_new': sms_price_new,
+            'kc_cost_new': kc_cost_new,
+            'scoring_cost_new': scoring_cost_new,
+            'ident_cost_new': ident_cost_new,
+            'money_transfer_cost': money_transfer_cost,
+            'collection_rate': collection_rate,
+            'collection_cost_rate': collection_cost_rate,
+            'funding_rate': funding_rate,
+            'repay_fee_inc': repay_fee_inc,
+            'repay_fee_exp': repay_fee_exp,
+            'AR': AR,
+            'TR': TR,
+            'lead_price': lead_price,
+            'portfolio_sale_rate': portfolio_sale_rate,
+            'portfolio_sale_price': portfolio_sale_price,
+            'tax_rate': tax_rate,
+            'use_repeat': use_repeat,
+            'RR': RR,
+            'L_repeat': L_repeat,
+            't_repeat': t_repeat,
+            'r_repeat': r_repeat,
+            'fee_repeat': fee_repeat,
+            'early_rate_repeat': early_rate_repeat,
+            'prolong_pen_repeat': prolong_pen_repeat,
+            'prolong_term_repeat': prolong_term_repeat,
+            'default_rate_repeat': default_rate_repeat,
+            'lgd_repeat': lgd_repeat,
+            'ins_pen_repeat': ins_pen_repeat,
+            'ins_sum_repeat': ins_sum_repeat,
+            'cross_pen_repeat': cross_pen_repeat,
+            'cross_sum_repeat': cross_sum_repeat,
+            'cac_repeat': cac_repeat,
+            'sms_count_repeat': sms_count_repeat,
+            'sms_price_repeat': sms_price_repeat,
+            'kc_cost_repeat': kc_cost_repeat,
+            'scoring_cost_repeat': scoring_cost_repeat,
+            'ident_cost_repeat': ident_cost_repeat,
+        }
+        if save_scenario_to_supabase(user_email, new_scenario_name, current_params):
+            st.success(f"Сценарий '{new_scenario_name}' сохранён")
+            st.rerun()
+        elif new_scenario_name:
+            st.error("Не удалось сохранить сценарий")
+    
+    # Удаление выбранного сценария
+    if selected_name and st.button("Удалить сценарий", key="del_btn"):
+        if delete_scenario_by_id(user_email, scenario_id):
+            st.success(f"Сценарий '{selected_name}' удалён")
+            st.rerun()
+
+# ------------------ ОСНОВНОЙ БЛОК ПАРАМЕТРОВ (ваш существующий) ------------------
+# Все виджеты ОБЯЗАТЕЛЬНО имеют параметр key, чтобы мы могли их перезаписывать через session_state.
+# Ниже идёт ваш оригинальный код, почти без изменений.
 
 # --------------------------------------------------------------
 # БОКОВАЯ ПАНЕЛЬ – ПАРАМЕТРЫ НОВОГО ЗАЙМА
@@ -106,16 +311,19 @@ with st.sidebar:
     scoring_cost_repeat = st.number_input("Скоринг (повтор, ₽)", value=10.0, step=5.0, key="scoring_rep", disabled=not use_repeat)
     ident_cost_repeat = st.number_input("Идентификация (повтор, ₽)", value=0.0, step=10.0, key="ident_rep", disabled=not use_repeat)
 
-# --------------------------------------------------------------
-# ФУНКЦИЯ РАСЧЁТА ДЛЯ ОДНОГО ЗАЙМА
-# --------------------------------------------------------------
+# ------------------ ПРИМЕНЕНИЕ ЗАГРУЖЕННОГО СЦЕНАРИЯ ------------------
+# Если в session_state есть флаг load_params, перезаписываем значения всех виджетов.
+if 'load_params' in st.session_state:
+    loaded = st.session_state['load_params']
+    for key, value in loaded.items():
+        if key in st.session_state:
+            st.session_state[key] = value
+    # Удаляем флаг, чтобы не зациклиться
+    del st.session_state['load_params']
+    st.rerun()
+
+# ------------------ ФУНКЦИЯ РАСЧЁТА (ваша, без изменений) ------------------
 def calculate_loan(params, is_new=True):
-    """
-    params: словарь с параметрами займа
-    is_new: если True, добавляем расходы на привлечение с делением на AR/TR,
-            а также доход от отказного трафика.
-            Для повторного займа (is_new=False) используем переданные абсолютные значения.
-    """
     L = params['L']
     t = params['t']
     r = params['r']
@@ -152,14 +360,13 @@ def calculate_loan(params, is_new=True):
         scoring_per_loan = scoring_cost / AR / TR
         ident_per_loan = ident_cost / AR / TR
     else:
-        cac_direct = params['cac_direct']   # теперь CAC_repeat
+        cac_direct = params['cac_direct']
         sms_cost = params['sms_count'] * params['sms_price']
         kc_cost = params['kc_cost']
         scoring_per_loan = params['scoring_cost']
         ident_per_loan = params['ident_cost']
         lead_price = 0
     
-    # ----- ДОХОДЫ -----
     interest = L * r * t
     fee_income = L * fee
     cross_income = (cross_margin * cross_pen * cross_sum) / vat_factor
@@ -177,7 +384,6 @@ def calculate_loan(params, is_new=True):
         rejection_income = lead_price / TR * ((1 - AR) / AR)
         total_revenue += rejection_income
     
-    # ----- РАСХОДЫ -----
     cac_total = cac_direct + sms_cost + kc_cost
     money_transfer = L * money_transfer_cost
     collection = collection_rate * (1 - default_rate) * L * collection_cost_rate
@@ -192,7 +398,6 @@ def calculate_loan(params, is_new=True):
     profit_before_tax = total_revenue - total_costs - expected_loss
     profit_after_tax = profit_before_tax * (1 - tax_rate)
     
-    # Детализация
     revenue_breakdown = {
         'Процентный доход': interest,
         'Комиссия за выдачу': fee_income,
@@ -222,9 +427,7 @@ def calculate_loan(params, is_new=True):
     
     return profit_after_tax, revenue_breakdown, cost_breakdown, profit_before_tax
 
-# --------------------------------------------------------------
-# СБОР ПАРАМЕТРОВ ДЛЯ НОВОГО И ПОВТОРНОГО ЗАЙМА
-# --------------------------------------------------------------
+# ------------------ СБОР ПАРАМЕТРОВ ДЛЯ РАСЧЁТА ------------------
 params_new = {
     'L': L_new,
     't': t_new,
@@ -248,7 +451,6 @@ params_new = {
     'portfolio_sale_rate': portfolio_sale_rate,
     'portfolio_sale_price': portfolio_sale_price,
     'tax_rate': tax_rate,
-    # Для новых
     'cac_direct': cac_direct_new,
     'sms_count': sms_count_new,
     'sms_price': sms_price_new,
@@ -284,7 +486,6 @@ if use_repeat:
         'portfolio_sale_rate': portfolio_sale_rate,
         'portfolio_sale_price': portfolio_sale_price,
         'tax_rate': tax_rate,
-        # Для повторного (абсолютные, без деления)
         'cac_direct': cac_repeat,
         'sms_count': sms_count_repeat,
         'sms_price': sms_price_repeat,
@@ -298,16 +499,14 @@ if use_repeat:
 else:
     params_repeat = None
 
-# Расчёт
 profit_new, rev_new, cost_new, profit_before_new = calculate_loan(params_new, is_new=True)
 if use_repeat and params_repeat:
     profit_repeat, rev_rep, cost_rep, profit_before_rep = calculate_loan(params_repeat, is_new=False)
     ltv = profit_new + profit_repeat * RR
-    # CAC_total = CAC_new + RR * CAC_repeat
     cac_new_total = (cac_direct_new + sms_count_new * sms_price_new + kc_cost_new
                      + (scoring_cost_new / AR / TR) + (ident_cost_new / AR / TR))
     cac_repeat_total = (cac_repeat + sms_count_repeat * sms_price_repeat + kc_cost_repeat
-                        + scoring_cost_repeat + ident_cost_repeat)   # для повторного нет деления
+                        + scoring_cost_repeat + ident_cost_repeat)
     cac_total = cac_new_total + RR * cac_repeat_total
 else:
     profit_repeat = 0
@@ -317,9 +516,7 @@ else:
 
 ltv_cac_ratio = ltv / cac_total if cac_total > 0 else 0
 
-# --------------------------------------------------------------
-# ОТОБРАЖЕНИЕ РЕЗУЛЬТАТОВ
-# --------------------------------------------------------------
+# ------------------ ОТОБРАЖЕНИЕ РЕЗУЛЬТАТОВ (без изменений) ------------------
 st.header("📈 Результаты")
 col1, col2, col3 = st.columns(3)
 col1.metric("LTV (чистая прибыль)", f"{ltv:,.0f} ₽")
@@ -345,7 +542,6 @@ if use_repeat and params_repeat:
     st.caption(f"Вклад повторного займа в LTV: {profit_repeat * RR:,.0f} ₽ (RR = {RR:.2f})")
     st.caption(f"CAC нового: {cac_new_total:,.0f} ₽, CAC повторного: {cac_repeat_total:,.0f} ₽ → итоговый CAC = {cac_new_total:.0f} + {RR:.2f}*{cac_repeat_total:.0f} = {cac_total:.0f} ₽")
 
-# Графики
 fig1 = px.bar(df_rev_new, x="Статья", y="Сумма (₽)", title="Структура доходов (новый заём)", color_discrete_sequence=['#2ecc71'])
 st.plotly_chart(fig1, use_container_width=True)
 fig2 = px.bar(df_cost_new, x="Статья", y="Сумма (₽)", title="Структура расходов и потерь (новый заём)", color_discrete_sequence=['#e74c3c'])
