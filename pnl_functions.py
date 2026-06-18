@@ -104,7 +104,7 @@ def generate_loan_cashflows(params, issue_month, total_months):
     money_transfer = L * money_transfer_cost
     collection = collection_rate * (1 - default_rate) * L * collection_cost_rate
     expected_loss = L * default_rate * lgd
-    funding_total = L * (1 + r * t / 2) * (funding_rate / 365) * t
+    funding_total = L * (funding_rate / 365) * t / 2
 
     n_months = max(1, math.ceil(t / 30))  # срок в месяцах
 
