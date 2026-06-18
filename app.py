@@ -5,13 +5,15 @@ import plotly.express as px
 import streamlit_authenticator as stauth
 from supabase import create_client, Client
 from datetime import datetime
+import json
 
 # ------------------ НАСТРОЙКА СТРАНИЦЫ ------------------
 st.set_page_config(page_title="Калькулятор юнит-экономики", layout="wide")
+st.title("📊 Калькулятор юнит-экономики (B2C кредитование)")
+st.markdown("Введите параметры для **нового** и **повторного** займов. LTV/CAC рассчитывается с учётом CAC повторного займа.")
 
 # ------------------ ПРЕОБРАЗОВАНИЕ SECRETS В ОБЫЧНЫЙ DICT ------------------
 def convert_secrets(obj):
-    """Рекурсивно преобразует SecretDict в обычный dict/list"""
     if hasattr(obj, 'to_dict'):
         return {k: convert_secrets(v) for k, v in obj.to_dict().items()}
     elif isinstance(obj, dict):
@@ -21,18 +23,16 @@ def convert_secrets(obj):
     else:
         return obj
 
-# Загружаем конфигурацию аутентификации из st.secrets
 auth_config = convert_secrets(st.secrets["auth"])
 
-# Инициализируем authenticator
+# Инициализация authenticator (без pre-authorized)
 authenticator = stauth.Authenticate(
     auth_config['credentials'],
     auth_config['cookie']['name'],
     auth_config['cookie']['key'],
     auth_config['cookie']['expiry_days'],
+    None
 )
-
-# Показываем форму входа
 authenticator.login()
 
 # ------------------ ПРОВЕРКА АВТОРИЗАЦИИ ------------------
@@ -43,8 +43,9 @@ if not st.session_state.get("authentication_status"):
         st.warning('Пожалуйста, авторизуйтесь')
     st.stop()
 
-# Если авторизован – приветствуем
-user_email = st.session_state['username']
+# Если авторизован
+username = st.session_state['username']
+user_email = auth_config['credentials']['usernames'][username]['email']
 st.sidebar.write(f"## Добро пожаловать, *{st.session_state['name']}*")
 authenticator.logout('Выйти', 'sidebar')
 
@@ -112,14 +113,13 @@ def delete_scenario(user_email, scenario_id):
         st.error(f"Ошибка удаления: {e}")
         return False
 
-# ------------------ ОСНОВНОЙ ИНТЕРФЕЙС (КАЛЬКУЛЯТОР) ------------------
-st.title("📊 Калькулятор юнит-экономики (B2C кредитование)")
-st.markdown("Введите параметры для **нового** и **повторного** займов. LTV/CAC рассчитывается с учётом CAC повторного займа.")
-
-# Глобальные константы
-ins_margin = 0.95
-cross_margin = 0.90
-vat_factor = 1.2
+# ------------------ ПРИМЕНЕНИЕ ЗАГРУЖЕННОГО СЦЕНАРИЯ (ДО ВИДЖЕТОВ) ------------------
+if 'loaded_params' in st.session_state:
+    loaded = st.session_state['loaded_params']
+    for key, value in loaded.items():
+        if key in st.session_state:
+            st.session_state[key] = value
+    del st.session_state['loaded_params']
 
 # --------------------------------------------------------------
 # БОКОВАЯ ПАНЕЛЬ – ПАРАМЕТРЫ НОВОГО ЗАЙМА
@@ -188,8 +188,8 @@ with st.sidebar:
     # Параметры ПОВТОРНОГО займа
     # ----------------------------------------------------------
     st.header("🔄 Параметры повторного займа")
-    use_repeat = st.checkbox("Учитывать повторный заём", value=True)
-    RR = st.number_input("Retention Rate (вероятность повтора)", value=1.0, step=0.05, disabled=not use_repeat)
+    use_repeat = st.checkbox("Учитывать повторный заём", value=True, key="use_repeat")
+    RR = st.number_input("Retention Rate (вероятность повтора)", value=1.0, step=0.05, key="RR", disabled=not use_repeat)
     
     st.subheader("Условия повторного займа")
     L_repeat = st.number_input("Сумма займа (₽)", value=12000.0, step=500.0, key="L_rep", disabled=not use_repeat)
@@ -217,168 +217,120 @@ with st.sidebar:
     scoring_cost_repeat = st.number_input("Скоринг (повтор, ₽)", value=10.0, step=5.0, key="scoring_rep", disabled=not use_repeat)
     ident_cost_repeat = st.number_input("Идентификация (повтор, ₽)", value=0.0, step=10.0, key="ident_rep", disabled=not use_repeat)
 
-# ------------------ БЛОК УПРАВЛЕНИЯ СЦЕНАРИЯМИ В SIDEBAR ------------------
-if 'loaded_params' in st.session_state:
-    loaded = st.session_state['loaded_params']
-    # Применяем значения к session_state для всех ключей, которые есть
-    for key, value in loaded.items():
-        if key in st.session_state:
-            st.session_state[key] = value
-    # Удаляем флаг, чтобы не применять повторно
-    del st.session_state['loaded_params']
-
-with st.sidebar:
+    # ------------------ БЛОК УПРАВЛЕНИЯ СЦЕНАРИЯМИ ------------------
     st.subheader("💾 Сохранённые сценарии")
     
-    # Загрузка списка сценариев
     scenarios = load_scenarios_list(user_email)
     scenario_names = {name: sid for sid, name in scenarios}
-    
-    # Выбор сценария
     selected_name = st.selectbox("Выберите сценарий", [""] + list(scenario_names.keys()))
     
-    # Кнопка загрузки (все действия внутри)
     if st.button("Загрузить выбранный сценарий") and selected_name:
         scenario_id = scenario_names[selected_name]
         saved_params = load_scenario_by_id(user_email, scenario_id)
         if saved_params:
-            # Применяем параметры
-            errors = []
-            success_count = 0
-            for key, value in saved_params.items():
-                if key in st.session_state:
-                    try:
-                        st.session_state[key] = value
-                        success_count += 1
-                    except Exception as e:
-                        errors.append(f"{key} -> {str(e)}")
-                else:
-                    errors.append(f"Ключ '{key}' отсутствует в session_state")
-            if errors:
-                st.error(f"Не удалось установить некоторые параметры: {', '.join(errors)}")
-                st.info(f"Успешно установлено {success_count} из {len(saved_params)} параметров")
-            else:
-                st.success(f"Сценарий '{selected_name}' загружен ({success_count} параметров)")
-                st.rerun()
+            st.session_state['loaded_params'] = saved_params
+            st.rerun()
         else:
-            st.error("Не удалось загрузить параметры сценария (нет данных)")
+            st.error("Не удалось загрузить параметры сценария")
     
-    # Сохранение нового сценария
     new_scenario_name = st.text_input("Имя нового сценария")
     if st.button("Сохранить текущий сценарий") and new_scenario_name:
-        # Собираем текущие параметры
         current_params = {
-    'L_new': L_new,
-    't_new': t_new,
-    'r_new': r_new,
-    'fee_new': fee_new,
-    'early_new': early_rate_new,                 # было early_rate_new
-    'prolong_pen_new': prolong_pen_new,
-    'prolong_term_new': prolong_term_new,
-    'default_new': default_rate_new,             # было default_rate_new
-    'lgd_new': lgd_new,
-    'ins_pen_new': ins_pen_new,
-    'ins_sum_new': ins_sum_new,
-    'cross_pen_new': cross_pen_new,
-    'cross_sum_new': cross_sum_new,
-    'cac_new': cac_direct_new,                   # было cac_direct_new
-    'sms_cnt_new': sms_count_new,                # было sms_count_new
-    'sms_price_new': sms_price_new,
-    'kc_new': kc_cost_new,                       # было kc_cost_new
-    'scoring_new': scoring_cost_new,             # было scoring_cost_new
-    'ident_new': ident_cost_new,                 # было ident_cost_new
-    'transfer': money_transfer_cost,             # было money_transfer_cost
-    'coll_rate': collection_rate,                # было collection_rate
-    'coll_cost': collection_cost_rate,           # было collection_cost_rate
-    'funding': funding_rate,                     # было funding_rate
-    'repay_inc': repay_fee_inc,                  # было repay_fee_inc
-    'repay_exp': repay_fee_exp,                  # было repay_fee_exp
-    'ar': AR,                                    # было AR
-    'tr': TR,                                    # было TR
-    'lead_price': lead_price,
-    'ps_rate': portfolio_sale_rate,              # было portfolio_sale_rate
-    'ps_price': portfolio_sale_price,            # было portfolio_sale_price
-    'tax': tax_rate,                             # было tax_rate
-    'use_repeat': use_repeat,
-    'RR': RR,
-    'L_rep': L_repeat,                           # было L_repeat
-    't_rep': t_repeat,                           # было t_repeat
-    'r_rep': r_repeat,                           # было r_repeat
-    'fee_rep': fee_repeat,                       # было fee_repeat
-    'early_rep': early_rate_repeat,              # было early_rate_repeat
-    'prol_pen_rep': prolong_pen_repeat,          # было prolong_pen_repeat
-    'prol_term_rep': prolong_term_repeat,        # было prolong_term_repeat
-    'def_rep': default_rate_repeat,              # было default_rate_repeat
-    'lgd_rep': lgd_repeat,                       # было lgd_repeat
-    'ins_pen_rep': ins_pen_repeat,               # было ins_pen_repeat
-    'ins_sum_rep': ins_sum_repeat,               # было ins_sum_repeat
-    'cross_pen_rep': cross_pen_repeat,           # было cross_pen_repeat
-    'cross_sum_rep': cross_sum_repeat,           # было cross_sum_repeat
-    'cac_rep': cac_repeat,                       # было cac_repeat
-    'sms_cnt_rep': sms_count_repeat,             # было sms_count_repeat
-    'sms_price_rep': sms_price_repeat,           # было sms_price_repeat
-    'kc_rep': kc_cost_repeat,                    # было kc_cost_repeat
-    'scoring_rep': scoring_cost_repeat,          # было scoring_cost_repeat
-    'ident_rep': ident_cost_repeat,              # было ident_cost_repeat
+            'L_new': L_new,
+            't_new': t_new,
+            'r_new': r_new,
+            'fee_new': fee_new,
+            'early_new': early_rate_new,
+            'prolong_pen_new': prolong_pen_new,
+            'prolong_term_new': prolong_term_new,
+            'default_new': default_rate_new,
+            'lgd_new': lgd_new,
+            'ins_pen_new': ins_pen_new,
+            'ins_sum_new': ins_sum_new,
+            'cross_pen_new': cross_pen_new,
+            'cross_sum_new': cross_sum_new,
+            'cac_new': cac_direct_new,
+            'sms_cnt_new': sms_count_new,
+            'sms_price_new': sms_price_new,
+            'kc_new': kc_cost_new,
+            'scoring_new': scoring_cost_new,
+            'ident_new': ident_cost_new,
+            'transfer': money_transfer_cost,
+            'coll_rate': collection_rate,
+            'coll_cost': collection_cost_rate,
+            'funding': funding_rate,
+            'repay_inc': repay_fee_inc,
+            'repay_exp': repay_fee_exp,
+            'ar': AR,
+            'tr': TR,
+            'lead_price': lead_price,
+            'ps_rate': portfolio_sale_rate,
+            'ps_price': portfolio_sale_price,
+            'tax': tax_rate,
+            'use_repeat': use_repeat,
+            'RR': RR,
+            'L_rep': L_repeat,
+            't_rep': t_repeat,
+            'r_rep': r_repeat,
+            'fee_rep': fee_repeat,
+            'early_rep': early_rate_repeat,
+            'prol_pen_rep': prolong_pen_repeat,
+            'prol_term_rep': prolong_term_repeat,
+            'def_rep': default_rate_repeat,
+            'lgd_rep': lgd_repeat,
+            'ins_pen_rep': ins_pen_repeat,
+            'ins_sum_rep': ins_sum_repeat,
+            'cross_pen_rep': cross_pen_repeat,
+            'cross_sum_rep': cross_sum_repeat,
+            'cac_rep': cac_repeat,
+            'sms_cnt_rep': sms_count_repeat,
+            'sms_price_rep': sms_price_repeat,
+            'kc_rep': kc_cost_repeat,
+            'scoring_rep': scoring_cost_repeat,
+            'ident_rep': ident_cost_repeat,
         }
         if save_scenario(user_email, new_scenario_name, current_params):
             st.success(f"Сценарий '{new_scenario_name}' сохранён")
             st.rerun()
     
-    # Удаление выбранного сценария
     if selected_name and st.button("Удалить сценарий"):
         scenario_id = scenario_names[selected_name]
         if delete_scenario(user_email, scenario_id):
             st.success(f"Сценарий '{selected_name}' удалён")
             st.rerun()
 
+# --------------------------------------------------------------
+# ФУНКЦИЯ РАСЧЁТА ДЛЯ ОДНОГО ЗАЙМА
+# --------------------------------------------------------------
+# Глобальные константы
+ins_margin = 0.95
+cross_margin = 0.90
+vat_factor = 1.2
 
-# ------------------ ФУНКЦИЯ РАСЧЁТА ДЛЯ ОДНОГО ЗАЙМА ------------------
 def calculate_loan(params, is_new=True):
-    L = params['L']
-    t = params['t']
-    r = params['r']
-    fee = params['fee']
-    early_rate = params['early_rate']
-    default_rate = params['default_rate']
-    lgd = params['lgd']
-    prolong_pen = params['prolong_pen']
-    prolong_term = params['prolong_term']
-    ins_pen = params['ins_pen']
-    ins_sum = params['ins_sum']
-    cross_pen = params['cross_pen']
-    cross_sum = params['cross_sum']
-    money_transfer_cost = params['money_transfer_cost']
-    collection_rate = params['collection_rate']
-    collection_cost_rate = params['collection_cost_rate']
-    funding_rate = params['funding_rate']
-    repay_fee_inc = params['repay_fee_inc']
-    repay_fee_exp = params['repay_fee_exp']
-    portfolio_sale_rate = params['portfolio_sale_rate']
-    portfolio_sale_price = params['portfolio_sale_price']
+    L = params['L']; t = params['t']; r = params['r']; fee = params['fee']
+    early_rate = params['early_rate']; default_rate = params['default_rate']; lgd = params['lgd']
+    prolong_pen = params['prolong_pen']; prolong_term = params['prolong_term']
+    ins_pen = params['ins_pen']; ins_sum = params['ins_sum']
+    cross_pen = params['cross_pen']; cross_sum = params['cross_sum']
+    money_transfer_cost = params['money_transfer_cost']; collection_rate = params['collection_rate']
+    collection_cost_rate = params['collection_cost_rate']; funding_rate = params['funding_rate']
+    repay_fee_inc = params['repay_fee_inc']; repay_fee_exp = params['repay_fee_exp']
+    portfolio_sale_rate = params['portfolio_sale_rate']; portfolio_sale_price = params['portfolio_sale_price']
     tax_rate = params['tax_rate']
     
     if is_new:
-        cac_direct = params['cac_direct']
-        sms_cost = params['sms_count'] * params['sms_price']
-        kc_cost = params['kc_cost']
-        scoring_cost = params['scoring_cost']
-        ident_cost = params['ident_cost']
-        AR = params['AR']
-        TR = params['TR']
-        lead_price = params['lead_price']
+        cac_direct = params['cac_direct']; sms_cost = params['sms_count'] * params['sms_price']
+        kc_cost = params['kc_cost']; scoring_cost = params['scoring_cost']; ident_cost = params['ident_cost']
+        AR = params['AR']; TR = params['TR']; lead_price = params['lead_price']
         scoring_per_loan = scoring_cost / AR / TR
         ident_per_loan = ident_cost / AR / TR
     else:
-        cac_direct = params['cac_direct']
-        sms_cost = params['sms_count'] * params['sms_price']
-        kc_cost = params['kc_cost']
-        scoring_per_loan = params['scoring_cost']
-        ident_per_loan = params['ident_cost']
-        lead_price = 0
-        AR = TR = 1.0  # не используются, но для избежания ошибок
+        cac_direct = params['cac_direct']; sms_cost = params['sms_count'] * params['sms_price']
+        kc_cost = params['kc_cost']; scoring_per_loan = params['scoring_cost']
+        ident_per_loan = params['ident_cost']; lead_price = 0
+        AR = TR = 1.0
     
-    # Доходы
     interest = L * r * t
     fee_income = L * fee
     cross_income = (cross_margin * cross_pen * cross_sum) / vat_factor
@@ -394,7 +346,6 @@ def calculate_loan(params, is_new=True):
     if is_new:
         total_revenue += lead_price / TR * ((1 - AR) / AR)
     
-    # Расходы
     cac_total = cac_direct + sms_cost + kc_cost
     money_transfer = L * money_transfer_cost
     collection = collection_rate * (1 - default_rate) * L * collection_cost_rate
@@ -403,13 +354,11 @@ def calculate_loan(params, is_new=True):
     
     total_costs = (cac_total + scoring_per_loan + ident_per_loan
                    + money_transfer + collection + funding + repay_fee_exp_amount)
-    
     expected_loss = L * default_rate * lgd
     
     profit_before_tax = total_revenue - total_costs - expected_loss
     profit_after_tax = profit_before_tax * (1 - tax_rate)
     
-    # Детализация для отображения
     revenue_breakdown = {
         'Процентный доход': interest,
         'Комиссия за выдачу': fee_income,
@@ -439,7 +388,9 @@ def calculate_loan(params, is_new=True):
     
     return profit_after_tax, revenue_breakdown, cost_breakdown, profit_before_tax
 
-# ------------------ СБОР ПАРАМЕТРОВ ДЛЯ РАСЧЁТА ------------------
+# --------------------------------------------------------------
+# СБОР ПАРАМЕТРОВ ДЛЯ РАСЧЁТА
+# --------------------------------------------------------------
 params_new = {
     'L': L_new, 't': t_new, 'r': r_new, 'fee': fee_new,
     'early_rate': early_rate_new, 'default_rate': default_rate_new, 'lgd': lgd_new,
@@ -456,7 +407,6 @@ params_new = {
     'AR': AR, 'TR': TR, 'lead_price': lead_price,
 }
 
-# Определяем params_repeat по умолчанию
 params_repeat = None
 if use_repeat:
     params_repeat = {
@@ -475,7 +425,6 @@ if use_repeat:
         'AR': 1.0, 'TR': 1.0, 'lead_price': 0,
     }
 
-# Расчёт
 profit_new, rev_new, cost_new, profit_before_new = calculate_loan(params_new, is_new=True)
 if use_repeat and params_repeat is not None:
     profit_repeat, rev_rep, cost_rep, profit_before_rep = calculate_loan(params_repeat, is_new=False)
@@ -493,7 +442,9 @@ else:
 
 ltv_cac_ratio = ltv / cac_total if cac_total > 0 else 0
 
-# ------------------ ОТОБРАЖЕНИЕ РЕЗУЛЬТАТОВ ------------------
+# --------------------------------------------------------------
+# ОТОБРАЖЕНИЕ РЕЗУЛЬТАТОВ
+# --------------------------------------------------------------
 st.header("📈 Результаты")
 col1, col2, col3 = st.columns(3)
 col1.metric("LTV (чистая прибыль)", f"{ltv:,.0f} ₽")
