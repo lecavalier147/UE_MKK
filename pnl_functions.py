@@ -1,58 +1,64 @@
 import math
 
 def generate_loan_cashflows(params, issue_month, total_months):
-    """
-    Генерирует помесячные денежные потоки для одного займа с детализацией по статьям.
-    params: словарь с параметрами займа (как в UE)
-    issue_month: месяц выдачи (0-based)
-    total_months: общее количество месяцев для расчёта
-    Возвращает: breakdown – словарь {статья: [значение_за_месяц, ...]}
-    """
-    L = params['L']
-    t = params['t']  # дней
-    r = params['r'] / 100.0
-    fee = params['fee'] / 100.0
+    L = params.get('L', 0.0)
+    t = params.get('t', 30)
+    r = params.get('r', 1.0) / 100.0
+    fee = params.get('fee', 5.0) / 100.0
     early_rate = params.get('early_rate', 0.0)
-    default_rate = params['default_rate']
-    lgd = params['lgd']
-    ins_pen = params['ins_pen']
-    ins_sum = params['ins_sum']
+    default_rate = params.get('default_rate', 0.12)
+    lgd = params.get('lgd', 0.8)
+    ins_pen = params.get('ins_pen', 0.25)
+    ins_sum = params.get('ins_sum', 800.0)
+    cross_pen = params.get('cross_pen', 0.10)
+    cross_sum = params.get('cross_sum', 2000.0)
+    money_transfer_cost = params.get('money_transfer_cost', 0.5) / 100.0
+    collection_rate = params.get('collection_rate', 0.30)
+    collection_cost_rate = params.get('collection_cost_rate', 7.0) / 100.0
+    funding_rate = params.get('funding_rate', 19.0) / 100.0
+    repay_fee_inc = params.get('repay_fee_inc', 3.5) / 100.0
+    repay_fee_exp = params.get('repay_fee_exp', 0.3) / 100.0
+    portfolio_sale_rate = params.get('portfolio_sale_rate', 0.80)
+    portfolio_sale_price = params.get('portfolio_sale_price', 18.0) / 100.0
+    tax_rate = params.get('tax_rate', 20.0) / 100.0
+    
     ins_margin = 0.95
-    cross_pen = params['cross_pen']
-    cross_sum = params['cross_sum']
     cross_margin = 0.90
     vat_factor = 1.2
-    money_transfer_cost = params['money_transfer_cost'] / 100.0
-    collection_rate = params['collection_rate']
-    collection_cost_rate = params['collection_cost_rate'] / 100.0
-    funding_rate = params['funding_rate'] / 100.0
-    repay_fee_inc = params['repay_fee_inc'] / 100.0
-    repay_fee_exp = params['repay_fee_exp'] / 100.0
-    portfolio_sale_rate = params['portfolio_sale_rate']
-    portfolio_sale_price = params['portfolio_sale_price'] / 100.0
-    tax_rate = params['tax_rate'] / 100.0
     
     is_new = params.get('is_new', True)
     if is_new:
-        cac_direct = params['cac_direct']
-        sms_cost = params['sms_count'] * params['sms_price']
-        kc_cost = params['kc_cost']
-        scoring_per_loan = params['scoring_cost'] / params['AR'] / params['TR']
-        ident_per_loan = params['ident_cost'] / params['AR'] / params['TR']
-        rejection_income = params['lead_price'] / params['TR'] * ((1 - params['AR']) / params['AR'])
+        cac_direct = params.get('cac_direct', 500.0)
+        sms_count = params.get('sms_count', 6)
+        sms_price = params.get('sms_price', 3.0)
+        kc_cost = params.get('kc_cost', 59.0)
+        scoring_cost = params.get('scoring_cost', 49.0)
+        ident_cost = params.get('ident_cost', 150.0)
+        AR = params.get('AR', 0.62)
+        TR = params.get('TR', 0.63)
+        lead_price = params.get('lead_price', 108.0)
+        sms_cost = sms_count * sms_price
+        scoring_per_loan = scoring_cost / AR / TR if AR and TR else scoring_cost
+        ident_per_loan = ident_cost / AR / TR if AR and TR else ident_cost
+        rejection_income = lead_price / TR * ((1 - AR) / AR) if AR and TR else 0.0
     else:
-        cac_direct = params['cac_direct']
-        sms_cost = params['sms_count'] * params['sms_price']
-        kc_cost = params['kc_cost']
-        scoring_per_loan = params['scoring_cost']
-        ident_per_loan = params['ident_cost']
+        cac_direct = params.get('cac_direct', 0.0)
+        sms_count = params.get('sms_count', 0)
+        sms_price = params.get('sms_price', 0.0)
+        kc_cost = params.get('kc_cost', 0.0)
+        scoring_cost = params.get('scoring_cost', 0.0)
+        ident_cost = params.get('ident_cost', 0.0)
+        sms_cost = sms_count * sms_price
+        scoring_per_loan = scoring_cost
+        ident_per_loan = ident_cost
         rejection_income = 0.0
+        AR = 1.0
+        TR = 1.0
 
-    # Общие суммы (как в UE)
     interest_total = L * r * t
     fee_income = L * fee
-    cross_income = (cross_margin * cross_pen * cross_sum) / vat_factor
-    ins_income = (ins_margin * ins_pen * ins_sum) / vat_factor
+    cross_income = (cross_margin * cross_pen * cross_sum) / vat_factor if cross_sum else 0.0
+    ins_income = (ins_margin * ins_pen * ins_sum) / vat_factor if ins_sum else 0.0
     early_loss = L * r * t * early_rate * 0.5
     portfolio_sale_income = L * default_rate * (1 + r * t) * portfolio_sale_rate * portfolio_sale_price
     repay_fee_inc_total = L * (1 + r * t) * (1 - default_rate) * repay_fee_inc
@@ -63,31 +69,16 @@ def generate_loan_cashflows(params, issue_month, total_months):
     funding_total = L * (1 + r * t / 2) * (funding_rate / 365) * t
 
     n_months = max(1, math.ceil(t / 30))
+    
+    # Доходные статьи
+    revenue_keys = ['процентный_доход', 'комиссия_за_выдачу', 'страховки', 'кросс_продукты',
+                    'комиссия_за_погашение_доход', 'продажа_портфеля', 'отказной_трафик']
+    expense_keys = ['CAC', 'СМС', 'колл_центр', 'скоринг', 'идентификация', 'перевод_денег',
+                    'взыскание', 'фондирование', 'комиссия_за_погашение_расход', 'резервы_ECL',
+                    'потери_от_досрочки', 'налог']
+    all_keys = revenue_keys + expense_keys
+    breakdown = {key: [0.0] * total_months for key in all_keys}
 
-    # Инициализация детализации
-    breakdown = {
-        'процентный_доход': [0.0] * total_months,
-        'комиссия_за_выдачу': [0.0] * total_months,
-        'страховки': [0.0] * total_months,
-        'кросс_продукты': [0.0] * total_months,
-        'комиссия_за_погашение_доход': [0.0] * total_months,
-        'продажа_портфеля': [0.0] * total_months,
-        'отказной_трафик': [0.0] * total_months,
-        'CAC': [0.0] * total_months,
-        'СМС': [0.0] * total_months,
-        'колл_центр': [0.0] * total_months,
-        'скоринг': [0.0] * total_months,
-        'идентификация': [0.0] * total_months,
-        'перевод_денег': [0.0] * total_months,
-        'взыскание': [0.0] * total_months,
-        'фондирование': [0.0] * total_months,
-        'комиссия_за_погашение_расход': [0.0] * total_months,
-        'резервы_ECL': [0.0] * total_months,
-        'потери_от_досрочки': [0.0] * total_months,
-        'налог': [0.0] * total_months,
-    }
-
-    # Распределение по дням (проценты, фондирование, комиссии за погашение)
     interest_per_day = L * r
     funding_per_day = funding_total / t if t > 0 else 0
     repay_inc_per_day = repay_fee_inc_total / t if t > 0 else 0
@@ -105,13 +96,11 @@ def generate_loan_cashflows(params, issue_month, total_months):
         breakdown['комиссия_за_погашение_доход'][month_index] += repay_inc_per_day * days_in_month
         breakdown['комиссия_за_погашение_расход'][month_index] += repay_exp_per_day * days_in_month
 
-    # Доходы в момент выдачи
     if issue_month < total_months:
         breakdown['комиссия_за_выдачу'][issue_month] += fee_income
         breakdown['страховки'][issue_month] += ins_income
         breakdown['кросс_продукты'][issue_month] += cross_income
         breakdown['отказной_трафик'][issue_month] += rejection_income
-        # Продажа портфеля – через 12 месяцев или в последний месяц
         sale_month = issue_month + min(12, n_months)
         if sale_month < total_months:
             breakdown['продажа_портфеля'][sale_month] += portfolio_sale_income
@@ -119,8 +108,6 @@ def generate_loan_cashflows(params, issue_month, total_months):
             last_month = min(issue_month + n_months - 1, total_months - 1)
             breakdown['продажа_портфеля'][last_month] += portfolio_sale_income
 
-    # Расходы в момент выдачи
-    if issue_month < total_months:
         breakdown['CAC'][issue_month] += cac_direct + sms_cost + kc_cost
         breakdown['скоринг'][issue_month] += scoring_per_loan
         breakdown['идентификация'][issue_month] += ident_per_loan
@@ -129,8 +116,6 @@ def generate_loan_cashflows(params, issue_month, total_months):
         breakdown['резервы_ECL'][issue_month] += expected_loss
         breakdown['потери_от_досрочки'][issue_month] += early_loss
 
-    # Налог (помесячно, на положительную прибыль)
-    # Рассчитываем прибыль до налога за месяц
     for m in range(total_months):
         profit_before_tax = (breakdown['процентный_доход'][m] +
                              breakdown['комиссия_за_выдачу'][m] +
@@ -171,71 +156,41 @@ def calculate_repeat_loans(new_volumes, RR, retention_distribution, total_months
 
 def aggregate_pnl_detailed(products_data, volumes_dict, RR, retention_distribution,
                            total_months, fixed_opex_per_month):
-    """
-    Агрегирует детализированный P&L по всем продуктам.
-    products_data: список словарей с параметрами продуктов
-    volumes_dict: {product_id: {'new': [list]}}
-    RR, retention_distribution: см. выше
-    total_months: int
-    fixed_opex_per_month: float
-    Возвращает словарь breakdown_total (ключи – статьи, значения – списки длиной total_months)
-    """
-    breakdown_total = {}
-    # Инициализируем пустыми списками на основе первого продукта
-    first_prod = products_data[0]
-    sample_breakdown = generate_loan_cashflows(first_prod['params_new'], 0, total_months)
-    for key in sample_breakdown.keys():
-        breakdown_total[key] = [0.0] * total_months
+    # Список статей (те же, что в generate_loan_cashflows)
+    revenue_keys = ['процентный_доход', 'комиссия_за_выдачу', 'страховки', 'кросс_продукты',
+                    'комиссия_за_погашение_доход', 'продажа_портфеля', 'отказной_трафик']
+    expense_keys = ['CAC', 'СМС', 'колл_центр', 'скоринг', 'идентификация', 'перевод_денег',
+                    'взыскание', 'фондирование', 'комиссия_за_погашение_расход', 'резервы_ECL',
+                    'потери_от_досрочки', 'налог']
+    all_keys = revenue_keys + expense_keys
+
+    breakdown_total = {key: [0.0] * total_months for key in all_keys}
 
     for prod in products_data:
         prod_id = prod['id']
         params_new = prod['params_new']
         params_repeat = prod['params_repeat']
-        new_volumes = volumes_dict[prod_id]['new']
+        new_volumes = volumes_dict.get(prod_id, {}).get('new', [0] * total_months)
         repeat_loans = calculate_repeat_loans(new_volumes, RR, retention_distribution, total_months)
 
         for m in range(total_months):
-            cnt_new = new_volumes[m]
+            cnt_new = new_volumes[m] if m < len(new_volumes) else 0
             if cnt_new > 0:
-                p = params_new.copy()
-                p['is_new'] = True
-                br = generate_loan_cashflows(p, m, total_months)
-                for key in br:
-                    breakdown_total[key][m] += br[key][m] * cnt_new  # только для месяца m, но нужно умножать все месяцы! Ошибка – исправим ниже.
-            # Правильно: умножаем все месяцы, а не только m.
-    # Выше ошибка: нужно умножать все месяцы, а не только m. Перепишем.
-
-    # Исправленный цикл:
-    for prod in products_data:
-        prod_id = prod['id']
-        params_new = prod['params_new']
-        params_repeat = prod['params_repeat']
-        new_volumes = volumes_dict[prod_id]['new']
-        repeat_loans = calculate_repeat_loans(new_volumes, RR, retention_distribution, total_months)
-
-        for m in range(total_months):
-            cnt_new = new_volumes[m]
-            if cnt_new > 0:
-                p = params_new.copy()
-                p['is_new'] = True
-                br = generate_loan_cashflows(p, m, total_months)
-                for key in br:
+                p_new = params_new.copy()
+                p_new['is_new'] = True
+                br = generate_loan_cashflows(p_new, m, total_months)
+                for key in all_keys:
                     for i in range(total_months):
                         breakdown_total[key][i] += br[key][i] * cnt_new
 
-            cnt_repeat = repeat_loans[m]
+            cnt_repeat = repeat_loans[m] if m < len(repeat_loans) else 0
             if cnt_repeat > 0:
-                p = params_repeat.copy()
-                p['is_new'] = False
-                br = generate_loan_cashflows(p, m, total_months)
-                for key in br:
+                p_repeat = params_repeat.copy()
+                p_repeat['is_new'] = False
+                br = generate_loan_cashflows(p_repeat, m, total_months)
+                for key in all_keys:
                     for i in range(total_months):
                         breakdown_total[key][i] += br[key][i] * cnt_repeat
 
-    # Добавляем постоянные операционные расходы отдельной статьёй
     breakdown_total['постоянные_расходы'] = [fixed_opex_per_month] * total_months
-
-    # Также можно добавить итоговые строки: всего доходов, всего расходов, прибыль.
-    # Их мы вычислим в UI.
-
     return breakdown_total
