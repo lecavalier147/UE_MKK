@@ -76,11 +76,11 @@ def save_scenario(user_email, scenario_name, params_dict):
 def load_scenarios_list(user_email):
     try:
         response = supabase.table("user_products")\
-            .select("id, product_data->>name")\
+            .select("id, product_data")\
             .eq("email", user_email)\
             .execute()
         if response.data:
-            return [(row["id"], row["product_data->>name"]) for row in response.data]
+            return [(row["id"], row["product_data"]["name"]) for row in response.data]
         return []
     except Exception as e:
         st.error(f"Ошибка загрузки списка: {e}")
