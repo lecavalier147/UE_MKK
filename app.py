@@ -218,6 +218,15 @@ with st.sidebar:
     ident_cost_repeat = st.number_input("Идентификация (повтор, ₽)", value=0.0, step=10.0, key="ident_rep", disabled=not use_repeat)
 
 # ------------------ БЛОК УПРАВЛЕНИЯ СЦЕНАРИЯМИ В SIDEBAR ------------------
+if 'loaded_params' in st.session_state:
+    loaded = st.session_state['loaded_params']
+    # Применяем значения к session_state для всех ключей, которые есть
+    for key, value in loaded.items():
+        if key in st.session_state:
+            st.session_state[key] = value
+    # Удаляем флаг, чтобы не применять повторно
+    del st.session_state['loaded_params']
+
 with st.sidebar:
     st.subheader("💾 Сохранённые сценарии")
     
@@ -259,29 +268,58 @@ with st.sidebar:
     if st.button("Сохранить текущий сценарий") and new_scenario_name:
         # Собираем текущие параметры
         current_params = {
-            'L_new': L_new, 't_new': t_new, 'r_new': r_new, 'fee_new': fee_new,
-            'early_rate_new': early_rate_new, 'prolong_pen_new': prolong_pen_new,
-            'prolong_term_new': prolong_term_new, 'default_rate_new': default_rate_new,
-            'lgd_new': lgd_new, 'ins_pen_new': ins_pen_new, 'ins_sum_new': ins_sum_new,
-            'cross_pen_new': cross_pen_new, 'cross_sum_new': cross_sum_new,
-            'cac_direct_new': cac_direct_new, 'sms_count_new': sms_count_new,
-            'sms_price_new': sms_price_new, 'kc_cost_new': kc_cost_new,
-            'scoring_cost_new': scoring_cost_new, 'ident_cost_new': ident_cost_new,
-            'money_transfer_cost': money_transfer_cost, 'collection_rate': collection_rate,
-            'collection_cost_rate': collection_cost_rate, 'funding_rate': funding_rate,
-            'repay_fee_inc': repay_fee_inc, 'repay_fee_exp': repay_fee_exp,
-            'AR': AR, 'TR': TR, 'lead_price': lead_price,
-            'portfolio_sale_rate': portfolio_sale_rate, 'portfolio_sale_price': portfolio_sale_price,
-            'tax_rate': tax_rate, 'use_repeat': use_repeat, 'RR': RR,
-            'L_repeat': L_repeat, 't_repeat': t_repeat, 'r_repeat': r_repeat,
-            'fee_repeat': fee_repeat, 'early_rate_repeat': early_rate_repeat,
-            'prolong_pen_repeat': prolong_pen_repeat, 'prolong_term_repeat': prolong_term_repeat,
-            'default_rate_repeat': default_rate_repeat, 'lgd_repeat': lgd_repeat,
-            'ins_pen_repeat': ins_pen_repeat, 'ins_sum_repeat': ins_sum_repeat,
-            'cross_pen_repeat': cross_pen_repeat, 'cross_sum_repeat': cross_sum_repeat,
-            'cac_repeat': cac_repeat, 'sms_count_repeat': sms_count_repeat,
-            'sms_price_repeat': sms_price_repeat, 'kc_cost_repeat': kc_cost_repeat,
-            'scoring_cost_repeat': scoring_cost_repeat, 'ident_cost_repeat': ident_cost_repeat,
+    'L_new': L_new,
+    't_new': t_new,
+    'r_new': r_new,
+    'fee_new': fee_new,
+    'early_new': early_rate_new,                 # было early_rate_new
+    'prolong_pen_new': prolong_pen_new,
+    'prolong_term_new': prolong_term_new,
+    'default_new': default_rate_new,             # было default_rate_new
+    'lgd_new': lgd_new,
+    'ins_pen_new': ins_pen_new,
+    'ins_sum_new': ins_sum_new,
+    'cross_pen_new': cross_pen_new,
+    'cross_sum_new': cross_sum_new,
+    'cac_new': cac_direct_new,                   # было cac_direct_new
+    'sms_cnt_new': sms_count_new,                # было sms_count_new
+    'sms_price_new': sms_price_new,
+    'kc_new': kc_cost_new,                       # было kc_cost_new
+    'scoring_new': scoring_cost_new,             # было scoring_cost_new
+    'ident_new': ident_cost_new,                 # было ident_cost_new
+    'transfer': money_transfer_cost,             # было money_transfer_cost
+    'coll_rate': collection_rate,                # было collection_rate
+    'coll_cost': collection_cost_rate,           # было collection_cost_rate
+    'funding': funding_rate,                     # было funding_rate
+    'repay_inc': repay_fee_inc,                  # было repay_fee_inc
+    'repay_exp': repay_fee_exp,                  # было repay_fee_exp
+    'ar': AR,                                    # было AR
+    'tr': TR,                                    # было TR
+    'lead_price': lead_price,
+    'ps_rate': portfolio_sale_rate,              # было portfolio_sale_rate
+    'ps_price': portfolio_sale_price,            # было portfolio_sale_price
+    'tax': tax_rate,                             # было tax_rate
+    'use_repeat': use_repeat,
+    'RR': RR,
+    'L_rep': L_repeat,                           # было L_repeat
+    't_rep': t_repeat,                           # было t_repeat
+    'r_rep': r_repeat,                           # было r_repeat
+    'fee_rep': fee_repeat,                       # было fee_repeat
+    'early_rep': early_rate_repeat,              # было early_rate_repeat
+    'prol_pen_rep': prolong_pen_repeat,          # было prolong_pen_repeat
+    'prol_term_rep': prolong_term_repeat,        # было prolong_term_repeat
+    'def_rep': default_rate_repeat,              # было default_rate_repeat
+    'lgd_rep': lgd_repeat,                       # было lgd_repeat
+    'ins_pen_rep': ins_pen_repeat,               # было ins_pen_repeat
+    'ins_sum_rep': ins_sum_repeat,               # было ins_sum_repeat
+    'cross_pen_rep': cross_pen_repeat,           # было cross_pen_repeat
+    'cross_sum_rep': cross_sum_repeat,           # было cross_sum_repeat
+    'cac_rep': cac_repeat,                       # было cac_repeat
+    'sms_cnt_rep': sms_count_repeat,             # было sms_count_repeat
+    'sms_price_rep': sms_price_repeat,           # было sms_price_repeat
+    'kc_rep': kc_cost_repeat,                    # было kc_cost_repeat
+    'scoring_rep': scoring_cost_repeat,          # было scoring_cost_repeat
+    'ident_rep': ident_cost_repeat,              # было ident_cost_repeat
         }
         if save_scenario(user_email, new_scenario_name, current_params):
             st.success(f"Сценарий '{new_scenario_name}' сохранён")
