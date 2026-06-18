@@ -228,34 +228,36 @@ with st.sidebar:
     # Выбор сценария
     selected_name = st.selectbox("Выберите сценарий", [""] + list(scenario_names.keys()))
     
-    # Кнопка загрузки (только здесь выводим ошибку)
+    # Кнопка загрузки (все действия внутри)
     if st.button("Загрузить выбранный сценарий") and selected_name:
         scenario_id = scenario_names[selected_name]
         saved_params = load_scenario_by_id(user_email, scenario_id)
-    if saved_params:
-        errors = []
-        success_count = 0
-        for key, value in saved_params.items():
-            if key in st.session_state:
-                try:
-                    st.session_state[key] = value
-                    success_count += 1
-                except Exception as e:
-                    errors.append(f"{key} -> {str(e)}")
+        if saved_params:
+            # Применяем параметры
+            errors = []
+            success_count = 0
+            for key, value in saved_params.items():
+                if key in st.session_state:
+                    try:
+                        st.session_state[key] = value
+                        success_count += 1
+                    except Exception as e:
+                        errors.append(f"{key} -> {str(e)}")
+                else:
+                    errors.append(f"Ключ '{key}' отсутствует в session_state")
+            if errors:
+                st.error(f"Не удалось установить некоторые параметры: {', '.join(errors)}")
+                st.info(f"Успешно установлено {success_count} из {len(saved_params)} параметров")
             else:
-                errors.append(f"Ключ '{key}' отсутствует в session_state")
-        if errors:
-            st.error(f"Не удалось установить некоторые параметры: {', '.join(errors)}")
-            st.info(f"Успешно установлено {success_count} из {len(saved_params)} параметров")
+                st.success(f"Сценарий '{selected_name}' загружен ({success_count} параметров)")
+                st.rerun()
         else:
-            st.success(f"Сценарий '{selected_name}' загружен ({success_count} параметров)")
-            st.rerun()
-    else:
-        st.error("Не удалось загрузить параметры сценария (нет данных)")
+            st.error("Не удалось загрузить параметры сценария (нет данных)")
     
     # Сохранение нового сценария
     new_scenario_name = st.text_input("Имя нового сценария")
     if st.button("Сохранить текущий сценарий") and new_scenario_name:
+        # Собираем текущие параметры
         current_params = {
             'L_new': L_new, 't_new': t_new, 'r_new': r_new, 'fee_new': fee_new,
             'early_rate_new': early_rate_new, 'prolong_pen_new': prolong_pen_new,
