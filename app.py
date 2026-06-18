@@ -376,7 +376,7 @@ def calculate_loan(params, is_new=True):
     cac_total = cac_direct + sms_cost + kc_cost
     money_transfer = L * money_transfer_cost
     collection = collection_rate * (1 - default_rate) * L * collection_cost_rate
-    funding = L * (1 + r * t / 2) * (funding_rate / 365) * t
+    funding = L * (funding_rate / 365) * t / 2
     repay_fee_exp_amount = L * (1 + r * t) * (1 - default_rate) * repay_fee_exp
     
     total_costs = (cac_total + scoring_per_loan + ident_per_loan
