@@ -221,38 +221,30 @@ with st.sidebar:
 with st.sidebar:
     st.subheader("💾 Сохранённые сценарии")
     
+    # Загрузка списка сценариев
     scenarios = load_scenarios_list(user_email)
     scenario_names = {name: sid for sid, name in scenarios}
     
-    # Выбор сценария для загрузки
+    # Выбор сценария
     selected_name = st.selectbox("Выберите сценарий", [""] + list(scenario_names.keys()))
     
-    if selected_name and st.button("Загрузить выбранный сценарий"):
+    # Кнопка загрузки (только здесь выводим ошибку)
+    if st.button("Загрузить выбранный сценарий") and selected_name:
         scenario_id = scenario_names[selected_name]
         saved_params = load_scenario_by_id(user_email, scenario_id)
         if saved_params:
-        # Применяем параметры с проверкой
-            errors = []
-        for key, value in saved_params.items():
-            if key in st.session_state:
-                try:
+            # Применяем параметры к session_state
+            for key, value in saved_params.items():
+                if key in st.session_state:
                     st.session_state[key] = value
-                except Exception as e:
-                    errors.append(f"{key}={value} (ошибка: {e})")
-            else:
-                errors.append(f"Ключ '{key}' отсутствует в session_state")
-        if errors:
-            st.warning(f"Некоторые параметры не загружены:\n" + "\n".join(errors))
-        else:
             st.success(f"Сценарий '{selected_name}' загружен")
-        st.rerun()
-    else:
-        st.error("Не удалось загрузить параметры сценария")
+            st.rerun()
+        else:
+            st.error("Не удалось загрузить параметры сценария (возможно, структура данных повреждена)")
     
     # Сохранение нового сценария
     new_scenario_name = st.text_input("Имя нового сценария")
     if st.button("Сохранить текущий сценарий") and new_scenario_name:
-        # Собираем текущие параметры (все виджеты)
         current_params = {
             'L_new': L_new, 't_new': t_new, 'r_new': r_new, 'fee_new': fee_new,
             'early_rate_new': early_rate_new, 'prolong_pen_new': prolong_pen_new,
