@@ -131,8 +131,8 @@ with st.sidebar:
     st.subheader("💰 Условия займа")
     L_new = st.number_input("Сумма займа (₽)", value=10000.0, step=500.0, key="L_new")
     t_new = st.number_input("Срок (дней)", value=30, step=5, key="t_new")
-    r_new = st.number_input("Процентная ставка (% в день)", value=1.0, step=0.1, key="r_new") / 100.0
-    fee_new = st.number_input("Комиссия за выдачу (% от суммы)", value=5.0, step=0.5, key="fee_new") / 100.0
+    r_new = st.number_input("Процентная ставка (% в день)", value=1.0, step=0.1, key="r_new")
+    fee_new = st.number_input("Комиссия за выдачу (% от суммы)", value=5.0, step=0.5, key="fee_new")
     
     # Поведение
     st.subheader("🔄 Поведение")
@@ -160,15 +160,15 @@ with st.sidebar:
     
     # Прочие расходы (общие для всех займов)
     st.subheader("💸 Общие расходы на заём")
-    money_transfer_cost = st.number_input("Перевод денег (% от суммы)", value=0.5, step=0.1, key="transfer") / 100.0
+    money_transfer_cost = st.number_input("Перевод денег (% от суммы)", value=0.5, step=0.1, key="transfer")
     collection_rate = st.slider("Доля просрочки в коллекшн", 0.0, 1.0, 0.30, 0.05, key="coll_rate")
-    collection_cost_rate = st.number_input("Стоимость взыскания (% от остатка)", value=7.0, step=1.0, key="coll_cost") / 100.0
-    funding_rate = st.number_input("Ставка фондирования (% годовых)", value=19.0, step=1.0, key="funding") / 100.0
+    collection_cost_rate = st.number_input("Стоимость взыскания (% от остатка)", value=7.0, step=1.0, key="coll_cost")
+    funding_rate = st.number_input("Ставка фондирования (% годовых)", value=19.0, step=1.0, key="funding")
     
     # Комиссии за погашение
     st.subheader("💳 Комиссии за погашение")
-    repay_fee_inc = st.number_input("Доход комиссии (% от суммы возврата)", value=3.5, step=0.5, key="repay_inc") / 100.0
-    repay_fee_exp = st.number_input("Расход комиссии (% от суммы возврата)", value=0.3, step=0.1, key="repay_exp") / 100.0
+    repay_fee_inc = st.number_input("Доход комиссии (% от суммы возврата)", value=3.5, step=0.5, key="repay_inc")
+    repay_fee_exp = st.number_input("Расход комиссии (% от суммы возврата)", value=0.3, step=0.1, key="repay_exp")
     
     # Конверсия и отказной трафик (только для новых)
     st.subheader("📊 Конверсия и отказной трафик")
@@ -179,10 +179,10 @@ with st.sidebar:
     # Продажа просроченного портфеля
     st.subheader("🏷️ Продажа просроченного портфеля")
     portfolio_sale_rate = st.slider("Доля продаваемой просрочки", 0.0, 1.0, 0.80, 0.05, key="ps_rate")
-    portfolio_sale_price = st.number_input("Цена продажи (% от остатка)", value=18.0, step=2.0, key="ps_price") / 100.0
+    portfolio_sale_price = st.number_input("Цена продажи (% от остатка)", value=18.0, step=2.0, key="ps_price")
     
     # Налог
-    tax_rate = st.number_input("Налог на прибыль (%)", value=20.0, step=5.0, key="tax") / 100.0
+    tax_rate = st.number_input("Налог на прибыль (%)", value=20.0, step=5.0, key="tax")
     
     # ----------------------------------------------------------
     # Параметры ПОВТОРНОГО займа
@@ -194,8 +194,8 @@ with st.sidebar:
     st.subheader("Условия повторного займа")
     L_repeat = st.number_input("Сумма займа (₽)", value=12000.0, step=500.0, key="L_rep", disabled=not use_repeat)
     t_repeat = st.number_input("Срок (дней)", value=30, step=5, key="t_rep", disabled=not use_repeat)
-    r_repeat = st.number_input("Ставка (% в день)", value=0.9, step=0.1, key="r_rep", disabled=not use_repeat) / 100.0
-    fee_repeat = st.number_input("Комиссия за выдачу (%)", value=5.0, step=0.5, key="fee_rep", disabled=not use_repeat) / 100.0
+    r_repeat = st.number_input("Ставка (% в день)", value=0.9, step=0.1, key="r_rep", disabled=not use_repeat)
+    fee_repeat = st.number_input("Комиссия за выдачу (%)", value=5.0, step=0.5, key="fee_rep", disabled=not use_repeat)
     early_rate_repeat = st.slider("Доля досрочных погашений", 0.0, 1.0, 0.10, 0.01, key="early_rep", disabled=not use_repeat)
     prolong_pen_repeat = st.slider("Доля пролонгаций", 0.0, 1.0, 0.15, 0.01, key="prol_pen_rep", disabled=not use_repeat)
     prolong_term_repeat = st.number_input("Срок пролонгации (дней)", value=45, step=5, key="prol_term_rep", disabled=not use_repeat)
@@ -308,29 +308,51 @@ cross_margin = 0.90
 vat_factor = 1.2
 
 def calculate_loan(params, is_new=True):
-    L = params['L']; t = params['t']; r = params['r']; fee = params['fee']
-    early_rate = params['early_rate']; default_rate = params['default_rate']; lgd = params['lgd']
-    prolong_pen = params['prolong_pen']; prolong_term = params['prolong_term']
-    ins_pen = params['ins_pen']; ins_sum = params['ins_sum']
-    cross_pen = params['cross_pen']; cross_sum = params['cross_sum']
-    money_transfer_cost = params['money_transfer_cost']; collection_rate = params['collection_rate']
-    collection_cost_rate = params['collection_cost_rate']; funding_rate = params['funding_rate']
-    repay_fee_inc = params['repay_fee_inc']; repay_fee_exp = params['repay_fee_exp']
-    portfolio_sale_rate = params['portfolio_sale_rate']; portfolio_sale_price = params['portfolio_sale_price']
-    tax_rate = params['tax_rate']
+    # Извлекаем значения и делим процентные на 100
+    L = params['L']
+    t = params['t']
+    r = params['r'] / 100.0
+    fee = params['fee'] / 100.0
+    early_rate = params['early_rate']
+    default_rate = params['default_rate']
+    lgd = params['lgd']
+    prolong_pen = params['prolong_pen']
+    prolong_term = params['prolong_term']
+    ins_pen = params['ins_pen']
+    ins_sum = params['ins_sum']
+    cross_pen = params['cross_pen']
+    cross_sum = params['cross_sum']
+    money_transfer_cost = params['money_transfer_cost'] / 100.0
+    collection_rate = params['collection_rate']
+    collection_cost_rate = params['collection_cost_rate'] / 100.0
+    funding_rate = params['funding_rate'] / 100.0
+    repay_fee_inc = params['repay_fee_inc'] / 100.0
+    repay_fee_exp = params['repay_fee_exp'] / 100.0
+    portfolio_sale_rate = params['portfolio_sale_rate']
+    portfolio_sale_price = params['portfolio_sale_price'] / 100.0
+    tax_rate = params['tax_rate'] / 100.0
     
     if is_new:
-        cac_direct = params['cac_direct']; sms_cost = params['sms_count'] * params['sms_price']
-        kc_cost = params['kc_cost']; scoring_cost = params['scoring_cost']; ident_cost = params['ident_cost']
-        AR = params['AR']; TR = params['TR']; lead_price = params['lead_price']
+        cac_direct = params['cac_direct']
+        sms_cost = params['sms_count'] * params['sms_price']
+        kc_cost = params['kc_cost']
+        scoring_cost = params['scoring_cost']
+        ident_cost = params['ident_cost']
+        AR = params['AR']
+        TR = params['TR']
+        lead_price = params['lead_price']
         scoring_per_loan = scoring_cost / AR / TR
         ident_per_loan = ident_cost / AR / TR
     else:
-        cac_direct = params['cac_direct']; sms_cost = params['sms_count'] * params['sms_price']
-        kc_cost = params['kc_cost']; scoring_per_loan = params['scoring_cost']
-        ident_per_loan = params['ident_cost']; lead_price = 0
+        cac_direct = params['cac_direct']
+        sms_cost = params['sms_count'] * params['sms_price']
+        kc_cost = params['kc_cost']
+        scoring_per_loan = params['scoring_cost']
+        ident_per_loan = params['ident_cost']
+        lead_price = 0
         AR = TR = 1.0
     
+    # Доходы
     interest = L * r * t
     fee_income = L * fee
     cross_income = (cross_margin * cross_pen * cross_sum) / vat_factor
@@ -346,6 +368,7 @@ def calculate_loan(params, is_new=True):
     if is_new:
         total_revenue += lead_price / TR * ((1 - AR) / AR)
     
+    # Расходы
     cac_total = cac_direct + sms_cost + kc_cost
     money_transfer = L * money_transfer_cost
     collection = collection_rate * (1 - default_rate) * L * collection_cost_rate
@@ -354,11 +377,13 @@ def calculate_loan(params, is_new=True):
     
     total_costs = (cac_total + scoring_per_loan + ident_per_loan
                    + money_transfer + collection + funding + repay_fee_exp_amount)
+    
     expected_loss = L * default_rate * lgd
     
     profit_before_tax = total_revenue - total_costs - expected_loss
     profit_after_tax = profit_before_tax * (1 - tax_rate)
     
+    # Детализация для отображения
     revenue_breakdown = {
         'Процентный доход': interest,
         'Комиссия за выдачу': fee_income,
@@ -392,39 +417,76 @@ def calculate_loan(params, is_new=True):
 # СБОР ПАРАМЕТРОВ ДЛЯ РАСЧЁТА
 # --------------------------------------------------------------
 params_new = {
-    'L': L_new, 't': t_new, 'r': r_new, 'fee': fee_new,
-    'early_rate': early_rate_new, 'default_rate': default_rate_new, 'lgd': lgd_new,
-    'prolong_pen': prolong_pen_new, 'prolong_term': prolong_term_new,
-    'ins_pen': ins_pen_new, 'ins_sum': ins_sum_new,
-    'cross_pen': cross_pen_new, 'cross_sum': cross_sum_new,
-    'money_transfer_cost': money_transfer_cost, 'collection_rate': collection_rate,
-    'collection_cost_rate': collection_cost_rate, 'funding_rate': funding_rate,
-    'repay_fee_inc': repay_fee_inc, 'repay_fee_exp': repay_fee_exp,
-    'portfolio_sale_rate': portfolio_sale_rate, 'portfolio_sale_price': portfolio_sale_price,
+    'L': L_new,
+    't': t_new,
+    'r': r_new,
+    'fee': fee_new,
+    'early_rate': early_rate_new,
+    'default_rate': default_rate_new,
+    'lgd': lgd_new,
+    'prolong_pen': prolong_pen_new,
+    'prolong_term': prolong_term_new,
+    'ins_pen': ins_pen_new,
+    'ins_sum': ins_sum_new,
+    'cross_pen': cross_pen_new,
+    'cross_sum': cross_sum_new,
+    'money_transfer_cost': money_transfer_cost,
+    'collection_rate': collection_rate,
+    'collection_cost_rate': collection_cost_rate,
+    'funding_rate': funding_rate,
+    'repay_fee_inc': repay_fee_inc,
+    'repay_fee_exp': repay_fee_exp,
+    'portfolio_sale_rate': portfolio_sale_rate,
+    'portfolio_sale_price': portfolio_sale_price,
     'tax_rate': tax_rate,
-    'cac_direct': cac_direct_new, 'sms_count': sms_count_new, 'sms_price': sms_price_new,
-    'kc_cost': kc_cost_new, 'scoring_cost': scoring_cost_new, 'ident_cost': ident_cost_new,
-    'AR': AR, 'TR': TR, 'lead_price': lead_price,
+    'cac_direct': cac_direct_new,
+    'sms_count': sms_count_new,
+    'sms_price': sms_price_new,
+    'kc_cost': kc_cost_new,
+    'scoring_cost': scoring_cost_new,
+    'ident_cost': ident_cost_new,
+    'AR': AR,
+    'TR': TR,
+    'lead_price': lead_price,
 }
 
 params_repeat = None
 if use_repeat:
     params_repeat = {
-        'L': L_repeat, 't': t_repeat, 'r': r_repeat, 'fee': fee_repeat,
-        'early_rate': early_rate_repeat, 'default_rate': default_rate_repeat, 'lgd': lgd_repeat,
-        'prolong_pen': prolong_pen_repeat, 'prolong_term': prolong_term_repeat,
-        'ins_pen': ins_pen_repeat, 'ins_sum': ins_sum_repeat,
-        'cross_pen': cross_pen_repeat, 'cross_sum': cross_sum_repeat,
-        'money_transfer_cost': money_transfer_cost, 'collection_rate': collection_rate,
-        'collection_cost_rate': collection_cost_rate, 'funding_rate': funding_rate,
-        'repay_fee_inc': repay_fee_inc, 'repay_fee_exp': repay_fee_exp,
-        'portfolio_sale_rate': portfolio_sale_rate, 'portfolio_sale_price': portfolio_sale_price,
+        'L': L_repeat,
+        't': t_repeat,
+        'r': r_repeat,
+        'fee': fee_repeat,
+        'early_rate': early_rate_repeat,
+        'default_rate': default_rate_repeat,
+        'lgd': lgd_repeat,
+        'prolong_pen': prolong_pen_repeat,
+        'prolong_term': prolong_term_repeat,
+        'ins_pen': ins_pen_repeat,
+        'ins_sum': ins_sum_repeat,
+        'cross_pen': cross_pen_repeat,
+        'cross_sum': cross_sum_repeat,
+        'money_transfer_cost': money_transfer_cost,
+        'collection_rate': collection_rate,
+        'collection_cost_rate': collection_cost_rate,
+        'funding_rate': funding_rate,
+        'repay_fee_inc': repay_fee_inc,
+        'repay_fee_exp': repay_fee_exp,
+        'portfolio_sale_rate': portfolio_sale_rate,
+        'portfolio_sale_price': portfolio_sale_price,
         'tax_rate': tax_rate,
-        'cac_direct': cac_repeat, 'sms_count': sms_count_repeat, 'sms_price': sms_price_repeat,
-        'kc_cost': kc_cost_repeat, 'scoring_cost': scoring_cost_repeat, 'ident_cost': ident_cost_repeat,
-        'AR': 1.0, 'TR': 1.0, 'lead_price': 0,
+        'cac_direct': cac_repeat,
+        'sms_count': sms_count_repeat,
+        'sms_price': sms_price_repeat,
+        'kc_cost': kc_cost_repeat,
+        'scoring_cost': scoring_cost_repeat,
+        'ident_cost': ident_cost_repeat,
+        'AR': 1.0,
+        'TR': 1.0,
+        'lead_price': 0,
     }
 
+# Расчёт
 profit_new, rev_new, cost_new, profit_before_new = calculate_loan(params_new, is_new=True)
 if use_repeat and params_repeat is not None:
     profit_repeat, rev_rep, cost_rep, profit_before_rep = calculate_loan(params_repeat, is_new=False)
