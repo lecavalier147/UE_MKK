@@ -557,22 +557,6 @@ with tab2:
         total_months = st.number_input("Количество месяцев", min_value=1, max_value=60, value=12, step=1)
         RR = st.number_input("Retention Rate (RR)", min_value=0.0, max_value=1.0, value=0.4, step=0.05)
         
-        default_distribution = [
-            0.1930, 0.1350, 0.0942, 0.0748, 0.0624, 0.0552, 0.0438, 0.0372,
-            0.0317, 0.0301, 0.0274, 0.0240, 0.0216, 0.0196, 0.0194, 0.0181,
-            0.0170, 0.0158, 0.0152, 0.0167, 0.0155, 0.0169, 0.0144, 0.0125
-        ]
-        dist_str = ", ".join([f"{x:.4f}" for x in default_distribution])
-        retention_input = st.text_area("Матрица ретеншн (через запятую)", value=dist_str, height=100)
-        try:
-            retention_distribution = [float(x.strip()) for x in retention_input.split(",") if x.strip()]
-            total = sum(retention_distribution)
-            if total > 0:
-                retention_distribution = [x / total for x in retention_distribution]
-        except:
-            st.error("Ошибка в формате матрицы. Используйте числа через запятую.")
-            retention_distribution = default_distribution
-        
         fixed_opex = st.number_input("Постоянные операционные расходы (в месяц, ₽)", min_value=0.0, value=100000.0, step=10000.0)
         
         st.subheader("Объёмы новых выдач (в месяц)")
@@ -595,7 +579,7 @@ with tab2:
         calc_btn = st.button("Рассчитать P&L", type="primary")
     
     if calc_btn:
-        # === СБОР ПАРАМЕТРОВ ИЗ SESSION_STATE ===
+        # Сбор параметров из session_state (как и раньше)
         params_new = {
             'L': st.session_state.get('L_new', 10000.0),
             't': st.session_state.get('t_new', 30),
@@ -618,9 +602,9 @@ with tab2:
             'portfolio_sale_price': st.session_state.get('ps_price', 18.0),
             'tax_rate': st.session_state.get('tax', 20.0),
             'cac_direct': st.session_state.get('cac_new', 500.0),
-            'sms_count': st.session_state.get('sms_cnt_new', 6),
-            'sms_price': st.session_state.get('sms_price_new', 3.0),
-            'kc_cost': st.session_state.get('kc_new', 59.0),
+            'sms_count': st.session_state.get('sms_cnt_new', 6),      # фактически не используется (обнулено)
+            'sms_price': st.session_state.get('sms_price_new', 3.0), # не используется
+            'kc_cost': st.session_state.get('kc_new', 59.0),         # не используется (обнулено)
             'scoring_cost': st.session_state.get('scoring_new', 49.0),
             'ident_cost': st.session_state.get('ident_new', 150.0),
             'AR': st.session_state.get('ar', 0.62),
@@ -664,11 +648,11 @@ with tab2:
         
         from pnl_functions import aggregate_pnl_detailed
         breakdown = aggregate_pnl_detailed(
-            products_data, volumes_dict, RR, retention_distribution,
+            products_data, volumes_dict, RR,
             total_months, fixed_opex
         )
         
-        # Построение таблицы
+        # --- Построение таблицы с детализацией ---
         income_keys = ['процентный_доход', 'комиссия_за_выдачу', 'страховки', 'кросс_продукты',
                        'комиссия_за_погашение_доход', 'продажа_портфеля', 'отказной_трафик']
         expense_keys = ['CAC', 'СМС', 'колл_центр', 'скоринг', 'идентификация', 'перевод_денег',
@@ -676,6 +660,7 @@ with tab2:
                         'потери_от_досрочки', 'постоянные_расходы', 'налог']
         
         rows = {}
+        # Доходы
         total_income = [0.0]*total_months
         for key in income_keys:
             rows[key] = breakdown.get(key, [0.0]*total_months)
@@ -683,6 +668,7 @@ with tab2:
                 total_income[i] += rows[key][i]
         rows['Итого доходов'] = total_income
         
+        # Расходы
         total_expense = [0.0]*total_months
         for key in expense_keys:
             rows[key] = breakdown.get(key, [0.0]*total_months)
@@ -690,6 +676,7 @@ with tab2:
                 total_expense[i] += rows[key][i]
         rows['Итого расходов'] = total_expense
         
+        # Прибыль и кумулятивная
         profit = [total_income[i] - total_expense[i] for i in range(total_months)]
         rows['Прибыль'] = profit
         cum = 0.0
@@ -699,6 +686,11 @@ with tab2:
             cum_profit.append(cum)
         rows['Кумулятивная прибыль'] = cum_profit
         
+        # --- ДОБАВЛЯЕМ СТРОКИ С КОЛИЧЕСТВОМ ЗАЙМОВ ---
+        rows['Количество новых займов'] = breakdown.get('new_loans_count', [0]*total_months)
+        rows['Количество повторных займов'] = breakdown.get('repeat_loans_count', [0]*total_months)
+        
+        # Создаём DataFrame и транспонируем
         df = pd.DataFrame(rows)
         df.index = [f"Месяц {i+1}" for i in range(total_months)]
         df_t = df.T
@@ -706,41 +698,40 @@ with tab2:
         with col_right:
             st.subheader("Детальный отчёт P&L")
             st.dataframe(df_t.style.format("{:,.0f}"), use_container_width=True)
+            
+            # --- Графики ---
+            months = list(range(1, total_months+1))
+            df_plot = pd.DataFrame({
+                'Месяц': months,
+                'Выручка': total_income,
+                'Расходы': total_expense,
+                'Прибыль': profit,
+                'Кумулятивная прибыль': cum_profit
+            })
+            
+            fig1 = px.line(df_plot, x='Месяц', y=['Выручка', 'Расходы', 'Прибыль'],
+                           title="Динамика доходов, расходов и прибыли")
+            st.plotly_chart(fig1, use_container_width=True)
+            
+            fig2 = px.bar(df_plot, x='Месяц', y='Прибыль', title="Прибыль по месяцам")
+            st.plotly_chart(fig2, use_container_width=True)
+            
+            fig3 = px.line(df_plot, x='Месяц', y='Кумулятивная прибыль',
+                           title="Кумулятивная прибыль (нарастающим итогом)")
+            st.plotly_chart(fig3, use_container_width=True)
+            
+            # --- Метрики ---
+            total_profit = sum(profit)
+            avg_profit = total_profit / total_months if total_months else 0
+            payback_month = None
+            for i, cum in enumerate(cum_profit):
+                if cum >= 0:
+                    payback_month = i+1
+                    break
+            
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Итоговая чистая прибыль", f"{total_profit:,.0f} ₽")
+            col2.metric("Среднемесячная прибыль", f"{avg_profit:,.0f} ₽")
+            col3.metric("Срок окупаемости (мес.)", payback_month if payback_month else "> период")
     
-    # --- ПОДГОТОВКА ДАННЫХ ДЛЯ ГРАФИКОВ ---
-    months = list(range(1, total_months + 1))
-    # Убедитесь, что cum_profit определена (она уже есть выше)
-    df_plot = pd.DataFrame({
-        'Месяц': months,
-        'Выручка': total_income,
-        'Расходы': total_expense,
-        'Прибыль': profit,
-        'Кумулятивная прибыль': cum_profit   # <-- добавили эту колонку
-    })
-    
-    # Графики
-    fig1 = px.line(df_plot, x='Месяц', y=['Выручка', 'Расходы', 'Прибыль'],
-                   title="Динамика доходов, расходов и прибыли")
-    st.plotly_chart(fig1, use_container_width=True)
-    
-    fig2 = px.bar(df_plot, x='Месяц', y='Прибыль', title="Прибыль по месяцам")
-    st.plotly_chart(fig2, use_container_width=True)
-    
-    fig3 = px.line(df_plot, x='Месяц', y='Кумулятивная прибыль',
-                   title="Кумулятивная прибыль (нарастающим итогом)")
-    st.plotly_chart(fig3, use_container_width=True)
-    
-    # --- МЕТРИКИ ---
-    total_profit = sum(profit)
-    avg_profit = total_profit / total_months if total_months else 0
-    payback_month = None
-    for i, cum in enumerate(cum_profit):
-        if cum >= 0:
-            payback_month = i + 1
-            break
-    
-    col1, col2, col3 = st.columns(3)
-    col1.metric("Итоговая чистая прибыль", f"{total_profit:,.0f} ₽")
-    col2.metric("Среднемесячная прибыль", f"{avg_profit:,.0f} ₽")
-    col3.metric("Срок окупаемости (мес.)", payback_month if payback_month else "> период")
-    pass
+pass
