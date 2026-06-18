@@ -232,15 +232,26 @@ with st.sidebar:
     if st.button("Загрузить выбранный сценарий") and selected_name:
         scenario_id = scenario_names[selected_name]
         saved_params = load_scenario_by_id(user_email, scenario_id)
-        if saved_params:
-            # Применяем параметры к session_state
-            for key, value in saved_params.items():
-                if key in st.session_state:
+    if saved_params:
+        errors = []
+        success_count = 0
+        for key, value in saved_params.items():
+            if key in st.session_state:
+                try:
                     st.session_state[key] = value
-            st.success(f"Сценарий '{selected_name}' загружен")
-            st.rerun()
+                    success_count += 1
+                except Exception as e:
+                    errors.append(f"{key} -> {str(e)}")
+            else:
+                errors.append(f"Ключ '{key}' отсутствует в session_state")
+        if errors:
+            st.error(f"Не удалось установить некоторые параметры: {', '.join(errors)}")
+            st.info(f"Успешно установлено {success_count} из {len(saved_params)} параметров")
         else:
-            st.error("Не удалось загрузить параметры сценария (возможно, структура данных повреждена)")
+            st.success(f"Сценарий '{selected_name}' загружен ({success_count} параметров)")
+            st.rerun()
+    else:
+        st.error("Не удалось загрузить параметры сценария (нет данных)")
     
     # Сохранение нового сценария
     new_scenario_name = st.text_input("Имя нового сценария")
