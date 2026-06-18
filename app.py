@@ -220,18 +220,30 @@ with st.sidebar:
 # ------------------ БЛОК УПРАВЛЕНИЯ СЦЕНАРИЯМИ В SIDEBAR ------------------
 with st.sidebar:
     st.subheader("💾 Сохранённые сценарии")
+    
     scenarios = load_scenarios_list(user_email)
     scenario_names = {name: sid for sid, name in scenarios}
+    
+    # Выбор сценария для загрузки
     selected_name = st.selectbox("Выберите сценарий", [""] + list(scenario_names.keys()))
-    if selected_name:
+    
+    if selected_name and st.button("Загрузить выбранный сценарий"):
         scenario_id = scenario_names[selected_name]
-        if st.button("Загрузить выбранный сценарий"):
-            saved_params = load_scenario_by_id(user_email, scenario_id)
-            if saved_params:
-                st.session_state['load_params'] = saved_params
-                st.rerun()
+        saved_params = load_scenario_by_id(user_email, scenario_id)
+        if saved_params:
+            # Применяем параметры напрямую к session_state
+            for key, value in saved_params.items():
+                if key in st.session_state:
+                    st.session_state[key] = value
+            st.success(f"Сценарий '{selected_name}' загружен")
+            st.rerun()
+        else:
+            st.error("Не удалось загрузить параметры сценария")
+    
+    # Сохранение нового сценария
     new_scenario_name = st.text_input("Имя нового сценария")
     if st.button("Сохранить текущий сценарий") and new_scenario_name:
+        # Собираем текущие параметры (все виджеты)
         current_params = {
             'L_new': L_new, 't_new': t_new, 'r_new': r_new, 'fee_new': fee_new,
             'early_rate_new': early_rate_new, 'prolong_pen_new': prolong_pen_new,
@@ -260,26 +272,14 @@ with st.sidebar:
         if save_scenario(user_email, new_scenario_name, current_params):
             st.success(f"Сценарий '{new_scenario_name}' сохранён")
             st.rerun()
+    
+    # Удаление выбранного сценария
     if selected_name and st.button("Удалить сценарий"):
+        scenario_id = scenario_names[selected_name]
         if delete_scenario(user_email, scenario_id):
             st.success(f"Сценарий '{selected_name}' удалён")
             st.rerun()
 
-# ------------------ ПРИМЕНЕНИЕ ЗАГРУЖЕННОГО СЦЕНАРИЯ ------------------
-if 'load_params' in st.session_state:
-    loaded = st.session_state['load_params']
-    for key, value in loaded.items():
-        if key in st.session_state:
-            try:
-                st.session_state[key] = value
-            except Exception as e:
-                # Выводим ошибку на страницу, чтобы увидеть конкретный ключ
-                st.error(f"❌ Ошибка при установке `{key}` = {value}: {e}")
-        else:
-            st.warning(f"⚠️ Ключ `{key}` отсутствует в session_state (возможно, виджет не создан)")
-    # Удаляем флаг, чтобы не зациклиться
-    del st.session_state['load_params']
-    st.rerun()
 
 # ------------------ ФУНКЦИЯ РАСЧЁТА ДЛЯ ОДНОГО ЗАЙМА ------------------
 def calculate_loan(params, is_new=True):
