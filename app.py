@@ -662,7 +662,7 @@ with tab2:
         products_data = [{'id': 'product1', 'params_new': params_new, 'params_repeat': params_repeat}]
         volumes_dict = {'product1': {'new': st.session_state.new_volumes_input}}
         
-        from pnl_functions import aggregate_pnl_detailed, PNL_KEYS
+        from pnl_functions import aggregate_pnl_detailed
         breakdown = aggregate_pnl_detailed(
             products_data, volumes_dict, RR, retention_distribution,
             total_months, fixed_opex
