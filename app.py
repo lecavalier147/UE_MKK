@@ -706,34 +706,41 @@ with tab2:
         with col_right:
             st.subheader("Детальный отчёт P&L")
             st.dataframe(df_t.style.format("{:,.0f}"), use_container_width=True)
-            
-            months = list(range(1, total_months+1))
-            df_plot = pd.DataFrame({
-                'Месяц': months,
-                'Выручка': total_income,
-                'Расходы': total_expense,
-                'Прибыль': profit
-            })
-            fig1 = px.line(df_plot, x='Месяц', y=['Выручка', 'Расходы', 'Прибыль'],
-                           title="Динамика доходов, расходов и прибыли")
-            st.plotly_chart(fig1, use_container_width=True)
-            
-            fig2 = px.bar(df_plot, x='Месяц', y='Прибыль', title="Прибыль по месяцам")
-            st.plotly_chart(fig2, use_container_width=True)
-            
-            fig3 = px.line(df_plot, x='Месяц', y='Кумулятивная прибыль',
-                           title="Кумулятивная прибыль (нарастающим итогом)")
-            st.plotly_chart(fig3, use_container_width=True)
-            
-            total_profit = sum(profit)
-            avg_profit = total_profit / total_months
-            payback_month = None
-            for i, cum in enumerate(cum_profit):
-                if cum >= 0:
-                    payback_month = i+1
-                    break
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Итоговая чистая прибыль", f"{total_profit:,.0f} ₽")
-            col2.metric("Среднемесячная прибыль", f"{avg_profit:,.0f} ₽")
-            col3.metric("Срок окупаемости (мес.)", payback_month if payback_month else "> период")
-            pass
+    
+    # --- ПОДГОТОВКА ДАННЫХ ДЛЯ ГРАФИКОВ ---
+    months = list(range(1, total_months + 1))
+    # Убедитесь, что cum_profit определена (она уже есть выше)
+    df_plot = pd.DataFrame({
+        'Месяц': months,
+        'Выручка': total_income,
+        'Расходы': total_expense,
+        'Прибыль': profit,
+        'Кумулятивная прибыль': cum_profit   # <-- добавили эту колонку
+    })
+    
+    # Графики
+    fig1 = px.line(df_plot, x='Месяц', y=['Выручка', 'Расходы', 'Прибыль'],
+                   title="Динамика доходов, расходов и прибыли")
+    st.plotly_chart(fig1, use_container_width=True)
+    
+    fig2 = px.bar(df_plot, x='Месяц', y='Прибыль', title="Прибыль по месяцам")
+    st.plotly_chart(fig2, use_container_width=True)
+    
+    fig3 = px.line(df_plot, x='Месяц', y='Кумулятивная прибыль',
+                   title="Кумулятивная прибыль (нарастающим итогом)")
+    st.plotly_chart(fig3, use_container_width=True)
+    
+    # --- МЕТРИКИ ---
+    total_profit = sum(profit)
+    avg_profit = total_profit / total_months if total_months else 0
+    payback_month = None
+    for i, cum in enumerate(cum_profit):
+        if cum >= 0:
+            payback_month = i + 1
+            break
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Итоговая чистая прибыль", f"{total_profit:,.0f} ₽")
+    col2.metric("Среднемесячная прибыль", f"{avg_profit:,.0f} ₽")
+    col3.metric("Срок окупаемости (мес.)", payback_month if payback_month else "> период")
+    pass
