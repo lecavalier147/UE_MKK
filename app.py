@@ -561,10 +561,10 @@ with tab2:
         
         st.subheader("Объёмы новых выдач (в месяц)")
         if 'new_volumes_input' not in st.session_state:
-            st.session_state.new_volumes_input = [100] * total_months
+            st.session_state.new_volumes_input = [0] * total_months
         if len(st.session_state.new_volumes_input) != total_months:
             if len(st.session_state.new_volumes_input) < total_months:
-                st.session_state.new_volumes_input += [100] * (total_months - len(st.session_state.new_volumes_input))
+                st.session_state.new_volumes_input += [0] * (total_months - len(st.session_state.new_volumes_input))
             else:
                 st.session_state.new_volumes_input = st.session_state.new_volumes_input[:total_months]
         
