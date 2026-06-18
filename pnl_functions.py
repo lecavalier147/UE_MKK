@@ -158,12 +158,10 @@ def generate_loan_cashflows(params, issue_month, total_months):
         breakdown['кросс_продукты'][issue_month] += cross_income
         breakdown['отказной_трафик'][issue_month] += rejection_income
 
-        sale_month = issue_month + min(12, n_months)
+        sale_month = issue_month + 12
         if sale_month < total_months:
             breakdown['продажа_портфеля'][sale_month] += portfolio_sale_income
-        else:
-            last_month = min(issue_month + n_months - 1, total_months - 1)
-            breakdown['продажа_портфеля'][last_month] += portfolio_sale_income
+    # Если sale_month >= total_months, доход не признаётся (за пределами горизонта)
 
         # Расходы в момент выдачи (СМС и колл-центр обнулены)
         breakdown['CAC'][issue_month] += cac_direct + sms_cost + kc_cost
