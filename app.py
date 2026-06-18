@@ -270,7 +270,14 @@ if 'load_params' in st.session_state:
     loaded = st.session_state['load_params']
     for key, value in loaded.items():
         if key in st.session_state:
-            st.session_state[key] = value
+            try:
+                st.session_state[key] = value
+            except Exception as e:
+                # Выводим ошибку на страницу, чтобы увидеть конкретный ключ
+                st.error(f"❌ Ошибка при установке `{key}` = {value}: {e}")
+        else:
+            st.warning(f"⚠️ Ключ `{key}` отсутствует в session_state (возможно, виджет не создан)")
+    # Удаляем флаг, чтобы не зациклиться
     del st.session_state['load_params']
     st.rerun()
 
