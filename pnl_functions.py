@@ -12,6 +12,7 @@ def generate_loan_cashflows(params, issue_month, total_months):
     t = params['t']  # дней
     r = params['r'] / 100.0
     fee = params['fee'] / 100.0
+    early_rate = params.get('early_rate', 0.0)
     default_rate = params['default_rate']
     lgd = params['lgd']
     ins_pen = params['ins_pen']
@@ -50,6 +51,7 @@ def generate_loan_cashflows(params, issue_month, total_months):
     fee_income = L * fee
     cross_income = (cross_margin * cross_pen * cross_sum) / vat_factor
     ins_income = (ins_margin * ins_pen * ins_sum) / vat_factor
+    early_loss = L * r * t * early_rate * 0.5   # добавлено
     portfolio_sale_income = L * default_rate * (1 + r * t) * portfolio_sale_rate * portfolio_sale_price
     repay_fee_inc_total = L * (1 + r * t) * (1 - default_rate) * repay_fee_inc
     repay_fee_exp_total = L * (1 + r * t) * (1 - default_rate) * repay_fee_exp
@@ -96,9 +98,10 @@ def generate_loan_cashflows(params, issue_month, total_months):
     # Расходы в момент выдачи
     if issue_month < total_months:
         costs[issue_month] += (cac_total + scoring_per_loan + ident_per_loan +
-                               money_transfer + collection + expected_loss)
+                               money_transfer + collection + expected_loss +
+                               early_loss)   # добавляем early_loss
 
-    # Налог (применяем для каждого месяца, если прибыль > 0)
+    # Налог (помесячно, на положительную прибыль)
     for m in range(total_months):
         profit = revenue[m] - costs[m]
         if profit > 0:

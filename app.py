@@ -550,21 +550,15 @@ with tab2:
     st.header("📈 P&L (помесячный отчёт)")
     st.markdown("Построение отчёта о прибылях и убытках на основе юнит-экономики.")
     
-    # Загрузка параметров из session_state (текущие значения калькулятора)
-    # Если параметры ещё не сохранены, используем значения по умолчанию (они уже есть в session_state)
-    
     col_left, col_right = st.columns([1, 2])
     
     with col_left:
         st.subheader("Параметры расчёта")
         
-        # Горизонт планирования
         total_months = st.number_input("Количество месяцев", min_value=1, max_value=60, value=12, step=1)
-        
-        # Общий Retention Rate
         RR = st.number_input("Retention Rate (RR)", min_value=0.0, max_value=1.0, value=0.4, step=0.05)
         
-        # Матрица ретеншн (распределение по месяцам) – предустановленная, но можно редактировать
+        # Матрица ретеншн (предустановленная)
         default_distribution = [
             0.1930, 0.1350, 0.0942, 0.0748, 0.0624, 0.0552, 0.0438, 0.0372,
             0.0317, 0.0301, 0.0274, 0.0240, 0.0216, 0.0196, 0.0194, 0.0181,
@@ -574,7 +568,6 @@ with tab2:
         retention_input = st.text_area("Матрица ретеншн (через запятую)", value=dist_str, height=100)
         try:
             retention_distribution = [float(x.strip()) for x in retention_input.split(",") if x.strip()]
-            # Нормализуем, если сумма не равна 1
             total = sum(retention_distribution)
             if total > 0:
                 retention_distribution = [x / total for x in retention_distribution]
@@ -582,22 +575,17 @@ with tab2:
             st.error("Ошибка в формате матрицы. Используйте числа через запятую.")
             retention_distribution = default_distribution
         
-        # Постоянные операционные расходы в месяц
         fixed_opex = st.number_input("Постоянные операционные расходы (в месяц, ₽)", min_value=0.0, value=100000.0, step=10000.0)
         
-        # Объёмы выдач – таблица для каждого месяца
         st.subheader("Объёмы новых выдач (в месяц)")
-        # Используем кнопку, чтобы сгенерировать поля ввода
         if 'new_volumes_input' not in st.session_state:
             st.session_state.new_volumes_input = [100] * total_months
-        # Если изменилось количество месяцев, обновляем список
         if len(st.session_state.new_volumes_input) != total_months:
             if len(st.session_state.new_volumes_input) < total_months:
                 st.session_state.new_volumes_input += [100] * (total_months - len(st.session_state.new_volumes_input))
             else:
                 st.session_state.new_volumes_input = st.session_state.new_volumes_input[:total_months]
         
-        # Отображаем поля для ввода
         cols = st.columns(min(6, total_months))
         for i in range(total_months):
             with cols[i % len(cols)]:
@@ -606,18 +594,16 @@ with tab2:
                     step=10, key=f"pnl_vol_{i}", min_value=0
                 )
         
-        # Кнопка расчёта
         calc_btn = st.button("Рассчитать P&L", type="primary")
     
-    # Результаты
     if calc_btn:
-        # Собираем параметры из session_state (используем текущие значения из калькулятора)
-        # Для нового займа:
+        # Собираем параметры из session_state (добавлены early_rate)
         params_new = {
             'L': st.session_state.get('L_new', 10000.0),
             't': st.session_state.get('t_new', 30),
             'r': st.session_state.get('r_new', 1.0),
             'fee': st.session_state.get('fee_new', 5.0),
+            'early_rate': st.session_state.get('early_new', 0.15),
             'default_rate': st.session_state.get('default_new', 0.12),
             'lgd': st.session_state.get('lgd_new', 0.8),
             'ins_pen': st.session_state.get('ins_pen_new', 0.25),
@@ -643,12 +629,12 @@ with tab2:
             'TR': st.session_state.get('tr', 0.63),
             'lead_price': st.session_state.get('lead_price', 108.0),
         }
-        # Для повторного займа:
         params_repeat = {
             'L': st.session_state.get('L_rep', 12000.0),
             't': st.session_state.get('t_rep', 30),
             'r': st.session_state.get('r_rep', 0.9),
             'fee': st.session_state.get('fee_rep', 5.0),
+            'early_rate': st.session_state.get('early_rep', 0.10),
             'default_rate': st.session_state.get('def_rep', 0.08),
             'lgd': st.session_state.get('lgd_rep', 0.8),
             'ins_pen': st.session_state.get('ins_pen_rep', 0.25),
@@ -670,34 +656,22 @@ with tab2:
             'kc_cost': st.session_state.get('kc_rep', 30.0),
             'scoring_cost': st.session_state.get('scoring_rep', 10.0),
             'ident_cost': st.session_state.get('ident_rep', 0.0),
-            'AR': 1.0,  # для повторных не используется
+            'AR': 1.0,
             'TR': 1.0,
             'lead_price': 0.0,
         }
         
-        # Подготовка данных для агрегации
-        products_data = [{
-            'id': 'product1',
-            'params_new': params_new,
-            'params_repeat': params_repeat
-        }]
-        volumes_dict = {
-            'product1': {
-                'new': st.session_state.new_volumes_input
-            }
-        }
+        products_data = [{'id': 'product1', 'params_new': params_new, 'params_repeat': params_repeat}]
+        volumes_dict = {'product1': {'new': st.session_state.new_volumes_input}}
         
-        # Расчёт
         from pnl_functions import aggregate_pnl
         result = aggregate_pnl(
             products_data, volumes_dict, RR, retention_distribution,
             total_months, fixed_opex
         )
         
-        # Отображение
         with col_right:
             st.subheader("Результаты P&L")
-            # Таблица
             months = list(range(1, total_months+1))
             df = pd.DataFrame({
                 'Месяц': months,
@@ -713,20 +687,16 @@ with tab2:
                 'Кумулятивная прибыль': '{:,.0f}'
             }), use_container_width=True)
             
-            # Графики
             st.subheader("Графики")
             fig1 = px.line(df, x='Месяц', y=['Выручка', 'Расходы', 'Прибыль'],
                            title="Динамика доходов, расходов и прибыли")
             st.plotly_chart(fig1, use_container_width=True)
-            
             fig2 = px.bar(df, x='Месяц', y='Прибыль', title="Прибыль по месяцам")
             st.plotly_chart(fig2, use_container_width=True)
-            
             fig3 = px.line(df, x='Месяц', y='Кумулятивная прибыль',
                            title="Кумулятивная прибыль (нарастающим итогом)")
             st.plotly_chart(fig3, use_container_width=True)
             
-            # Ключевые метрики
             total_profit = sum(result['profit'])
             avg_profit = total_profit / total_months
             payback_month = None
@@ -737,5 +707,4 @@ with tab2:
             st.metric("Итоговая чистая прибыль за период", f"{total_profit:,.0f} ₽")
             st.metric("Среднемесячная прибыль", f"{avg_profit:,.0f} ₽")
             st.metric("Срок окупаемости (мес.)", payback_month if payback_month else "> период")
-
             pass
